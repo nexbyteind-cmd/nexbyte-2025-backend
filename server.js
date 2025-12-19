@@ -6,9 +6,15 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Middleware
 app.use(cors({
-    origin: '*', // Allow all origins
+    origin: [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://nexbyte-2025-frontend.vercel.app",
+        "https://nexbyteind.com",
+        "https://www.nexbyteind.com",
+        "https://admin.nexbyteind.com"
+    ],
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));

@@ -10,6 +10,7 @@ app.use(cors({
     origin: [
         "http://localhost:5173",
         "http://localhost:3000",
+        "http://localhost:8080",
         "https://nexbyte-2025-frontend.vercel.app",
         "https://nexbyteind.com",
         "https://www.nexbyteind.com",
@@ -86,14 +87,15 @@ app.post('/api/contact', async (req, res) => {
 // --- HACKATHONS ---
 app.post('/api/hackathons', async (req, res) => {
     try {
-        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const database = await connectDB();
         const hackathonData = {
             ...req.body,
+            whatsappGroupLink: req.body.whatsappGroupLink || "", // Add this field
             createdAt: new Date(),
             status: 'active',
-            isHidden: false // Default to visible
+            isHidden: false
         };
-        const result = await db.collection('hackathons').insertOne(hackathonData);
+        const result = await database.collection('hackathons').insertOne(hackathonData);
         res.status(201).json({ success: true, message: 'Hackathon created', id: result.insertedId });
     } catch (error) {
         console.error('Error creating hackathon:', error);
@@ -159,14 +161,413 @@ app.put('/api/hackathons/:id/visibility', async (req, res) => {
 
 
 // --- APPLICATIONS ---
+
+// --- EMAIL CONFIGURATION ---
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.SMTP_EMAIL,
+        pass: process.env.SMTP_PASSWORD
+    }
+});
+
+
+// Helper to send generic email
+async function sendEmail(toEmail, subject, htmlContent) {
+    if (!toEmail) return;
+
+    const mailOptions = {
+        from: `"NexByte Team" <${process.env.SMTP_EMAIL}>`,
+        to: toEmail,
+        subject: subject,
+        html: htmlContent
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        console.log(`Email sent to ${toEmail}`);
+    } catch (error) {
+        console.error("Error sending email:", error);
+    }
+}
+
+// Template Generators
+const getHackathonWelcomeTemplate = (participantName, hackathonName, whatsappLink) => `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+        <h2 style="color: #2563eb;">Welcome to ${hackathonName}!</h2>
+        <p>Hello <strong>${participantName}</strong>,</p>
+        <p>Thanks for registering! We are excited to have you.</p>
+        
+        ${whatsappLink ? `
+        <div style="background-color: #dcfce7; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: center;">
+            <p style="margin: 0; color: #166534; font-weight: bold;">Join the Official WhatsApp Group</p>
+            <a href="${whatsappLink}" style="display: inline-block; margin-top: 10px; background-color: #25D366; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                Join Group Now
+            </a>
+            <p style="margin-top: 10px; font-size: 12px; color: #555;">Or click here: <a href="${whatsappLink}">${whatsappLink}</a></p>
+        </div>
+        ` : ''}
+
+        <p>Stay tuned for further updates.</p>
+        <p>Best Regards,<br/><strong>Team NexByte</strong></p>
+    </div>
+`;
+
+const getProgramEmailTemplate = (name, title, type) => `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+        <h2 style="color: #7c3aed;">Application Received: ${title}</h2>
+        <p>Dear <strong>${name}</strong>,</p>
+        <p>Thank you for applying for the <strong>${type}</strong> program at NexByte.</p>
+        <p>We have received your application and our team is currently reviewing it.</p>
+        <p>You will receive further instructions shortly regarding the next steps.</p>
+        <br/>
+        <p>Best Regards,<br/><strong>NexByte Learning Team</strong></p>
+    </div>
+`;
+
+const getStaffingEmailTemplate = (contactPerson, serviceCategory) => {
+    let specificMessage = "";
+    switch (serviceCategory) {
+        case "IT Staffing":
+            specificMessage = "We are reviewing your requirements for IT staffing. Our team will get back to you with profiles that match your needs.";
+            break;
+        case "Contract Hiring":
+            specificMessage = "Thank you for choosing our Contract Hiring services. We will connect with you to discuss the contract duration and resource availability.";
+            break;
+        case "Full-Time Recruitment":
+            specificMessage = "We acknowledge your request for Full-Time Recruitment. Our talent acquisition specialists will scrutinize the best candidates for your organization.";
+            break;
+        case "Talent Screening":
+            specificMessage = "We have received your request for Talent Screening. We will proceed with the validation process as per your specified metrics.";
+            break;
+        default:
+            specificMessage = "We have received your staffing request and will get back to you shortly.";
+    }
+
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+        <h2 style="color: #0d9488;">${serviceCategory} Request Received</h2>
+        <p>Dear <strong>${contactPerson}</strong>,</p>
+        <p>Thank you for reaching out to NexByte for <strong>${serviceCategory}</strong>.</p>
+        <p style="background-color: #f0fdfa; padding: 15px; border-radius: 5px; border-left: 4px solid #0d9488;">
+            ${specificMessage}
+        </p>
+        <p>A representative will contact you within 24 hours.</p>
+        <br/>
+        <p>Best Regards,<br/><strong>NexByte Business Solutions</strong></p>
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; color: #333; line-height: 1.6;">
+        <!-- Header -->
+        <div style="background-color: ${config.color}; padding: 30px; border-radius: 12px 12px 0 0; text-align: center; color: white;">
+            <h1 style="margin: 0; font-size: 28px;">${serviceCategory}</h1>
+            <p style="margin: 10px 0 0; opacity: 0.9; font-size: 16px;">${config.description}</p>
+        </div>
+
+        <!-- Body -->
+        <div style="padding: 30px; border: 1px solid #e5e7eb; border-top: none; background-color: #fff;">
+            <p style="font-size: 16px;">Hello <strong>${commonDetails.fullName}</strong>,</p>
+            <p style="font-size: 16px; color: #555;">Thank you for your interest in our <strong>${serviceCategory}</strong> services. We have received your project details and our technical team is reviewing them.</p>
+
+            <!-- Features -->
+            <div style="margin: 25px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: ${config.color};">Why NexByte for ${serviceCategory}?</h3>
+                <ul style="padding-left: 20px; margin-bottom: 0;">
+                    ${config.features.map(f => `<li style="margin-bottom: 5px;">${f}</li>`).join('')}
+                </ul>
+            </div>
+
+            <!-- Submission Summary -->
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                <h3 style="color: #1f2937; margin-bottom: 15px;">Your Submission Details</h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div>
+                        <p style="margin: 5px 0; font-size: 14px;"><strong>Company:</strong> ${commonDetails.companyName || 'N/A'}</p>
+                        <p style="margin: 5px 0; font-size: 14px;"><strong>Timeline:</strong> ${commonDetails.timeline || 'Flexible'}</p>
+                        <p style="margin: 5px 0; font-size: 14px;"><strong>Budget:</strong> ${commonDetails.budgetRange || 'Not specified'}</p>
+                        <p style="margin: 5px 0; font-size: 14px;"><strong>Phone:</strong> ${commonDetails.phone}</p>
+                    </div>
+                    <div>
+                       ${specificDetailsHtml}
+                    </div>
+                </div>
+                 <p style="margin: 15px 0 5px; font-size: 14px;"><strong>Project Brief:</strong></p>
+                 <p style="margin: 0; font-size: 14px; font-style: italic; color: #666;">"${commonDetails.projectBrief}"</p>
+            </div>
+        </div>
+
+        <!-- Big Footer (Contact & Socials) -->
+        <div style="background-color: #111827; color: white; padding: 40px 30px; border-radius: 0 0 12px 12px; text-align: center;">
+            <h3 style="margin-top: 0; color: #fff;">Need immediate assistance?</h3>
+            <p style="color: #9ca3af; margin-bottom: 30px;">Contact us via any of the channels below.</p>
+
+            <!-- Contact Info -->
+             <div style="margin-bottom: 30px; font-size: 14px;">
+                <p style="margin: 5px 0;">📞 <strong>Phone:</strong> 8247872473</p>
+                <p style="margin: 5px 0;">📧 <strong>Email:</strong> nexbyteind@gmail.com | lokesh@nexbyte.com</p>
+            </div>
+
+            <!-- Social Links Grid -->
+            <div style="display: inline-flex; gap: 15px; flex-wrap: wrap; justify-content: center;">
+                <a href="https://www.linkedin.com/company/nexbyte-services/" style="background: #0077b5; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">LinkedIn</a>
+                <a href="https://www.instagram.com/nexbyte_tech?igsh=OWJpZnZjd25hZ2p5&utm_source=qr" style="background: #E1306C; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">Instagram</a>
+                <a href="https://x.com/nexbyteind" style="background: #000; border: 1px solid #333; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">X (Twitter)</a>
+                <a href="https://youtube.com/@nexbyteind?si=XET9tJAyE4lWN413" style="background: #FF0000; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">YouTube</a>
+                <a href="https://www.facebook.com/profile.php?id=61584986327411" style="background: #1877F2; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">Facebook</a>
+            </div>
+
+            <p style="margin-top: 30px; font-size: 12px; color: #6b7280;">&copy; ${new Date().getFullYear()} NexByte Services. All rights reserved.</p>
+        </div>
+    </div>
+    `;
+};
+
+
+const getTechnologyEmailTemplate = (data) => {
+    const { serviceCategory, commonDetails, serviceDetails } = data;
+
+    // Service Specific Content Config- (Same as before)
+    const servicesConfig = {
+        "Web Development": {
+            color: "#3b82f6", // Blue
+            description: "Modern, responsive, and high-performance websites built with the latest technologies.",
+            features: ["React/Next.js", "SEO Optimized", "Fast Performance", "Mobile Responsive"]
+        },
+        "Custom Software Development": {
+            color: "#8b5cf6", // Purple
+            description: "Tailored software solutions designed to meet your specific business needs and workflows.",
+            features: ["Scalable architecture", "Custom features", "Integration support", "Maintenance included"]
+        },
+        "App Development": {
+            color: "#10b981", // Emerald
+            description: "Native and cross-platform mobile applications for iOS and Android.",
+            features: ["Flutter/React Native", "User-friendly UI/UX", "App Store Deployment", "Push Notifications"]
+        },
+        "UI / UX Design": {
+            color: "#ec4899", // Pink
+            description: "User-centric design services for websites and mobile applications.",
+            features: ["Figma Design", "Prototyping", "User Research", "Brand Consistency"]
+        },
+        "IT Consulting": {
+            color: "#f59e0b", // Amber
+            description: "Expert guidance on digital transformation and technology strategy.",
+            features: ["Tech Stack Selection", "Process Automation", "System Architecture", "Legacy Modernization"]
+        },
+        "Cloud Solutions": {
+            color: "#0ea5e9", // Sky
+            description: "Secure and scalable cloud infrastructure setup and management.",
+            features: ["AWS/Azure/GCP", "Cloud Migration", "Cost Optimization", "Security Audits"]
+        }
+    };
+
+    const config = servicesConfig[serviceCategory] || { color: "#333", description: "Technology Services", features: [] };
+
+    // Formatting Specific Details
+    const specificDetailsHtml = Object.entries(serviceDetails).map(([key, value]) => {
+        // Humanize key (e.g. softwareType -> Software Type)
+        const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+        return `<p style="margin: 5px 0; font-size: 14px;"><strong>${label}:</strong> ${value}</p>`;
+    }).join('');
+
+    return `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; color: #333; line-height: 1.6;">
+        <!-- Header -->
+        <div style="background-color: ${config.color}; padding: 30px; border-radius: 12px 12px 0 0; text-align: center; color: white;">
+            <h1 style="margin: 0; font-size: 28px;">${serviceCategory}</h1>
+            <p style="margin: 10px 0 0; opacity: 0.9; font-size: 16px;">${config.description}</p>
+        </div>
+
+        <!-- Body -->
+        <div style="padding: 30px; border: 1px solid #e5e7eb; border-top: none; background-color: #fff;">
+            <p style="font-size: 16px;">Hello <strong>${commonDetails.fullName}</strong>,</p>
+            <p style="font-size: 16px; color: #555;">Thank you for your interest in our <strong>${serviceCategory}</strong> services. We have received your project details and our technical team is reviewing them.</p>
+
+            <!-- Features -->
+            <div style="margin: 25px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: ${config.color};">Why NexByte for ${serviceCategory}?</h3>
+                <ul style="padding-left: 20px; margin-bottom: 0;">
+                    ${config.features.map(f => `<li style="margin-bottom: 5px;">${f}</li>`).join('')}
+                </ul>
+            </div>
+
+            <!-- Submission Summary -->
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                <h3 style="color: #1f2937; margin-bottom: 15px;">Your Submission Details</h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div>
+                        <p style="margin: 5px 0; font-size: 14px;"><strong>Company:</strong> ${commonDetails.companyName || 'N/A'}</p>
+                        <p style="margin: 5px 0; font-size: 14px;"><strong>Timeline:</strong> ${commonDetails.timeline || 'Flexible'}</p>
+                        <p style="margin: 5px 0; font-size: 14px;"><strong>Budget:</strong> ${commonDetails.budgetRange || 'Not specified'}</p>
+                        <p style="margin: 5px 0; font-size: 14px;"><strong>Phone:</strong> ${commonDetails.phone}</p>
+                    </div>
+                    <div>
+                       ${specificDetailsHtml}
+                    </div>
+                </div>
+                 <p style="margin: 15px 0 5px; font-size: 14px;"><strong>Project Brief:</strong></p>
+                 <p style="margin: 0; font-size: 14px; font-style: italic; color: #666;">"${commonDetails.projectBrief}"</p>
+            </div>
+        </div>
+
+        <!-- Big Footer (Contact & Socials) -->
+        <div style="background-color: #111827; color: white; padding: 40px 30px; border-radius: 0 0 12px 12px; text-align: center;">
+            <h3 style="margin-top: 0; color: #fff;">Need immediate assistance?</h3>
+            <p style="color: #9ca3af; margin-bottom: 30px;">Contact us via any of the channels below.</p>
+
+            <!-- Contact Info -->
+             <div style="margin-bottom: 30px; font-size: 14px;">
+                <p style="margin: 5px 0;">📞 <strong>Phone:</strong> 8247872473</p>
+                <p style="margin: 5px 0;">📧 <strong>Email:</strong> nexbyteind@gmail.com | lokesh@nexbyte.com</p>
+            </div>
+
+            <!-- Social Links Grid -->
+            <div style="display: inline-flex; gap: 15px; flex-wrap: wrap; justify-content: center;">
+                <a href="https://www.linkedin.com/company/nexbyte-services/" style="background: #0077b5; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">LinkedIn</a>
+                <a href="https://www.instagram.com/nexbyte_tech?igsh=OWJpZnZjd25hZ2p5&utm_source=qr" style="background: #E1306C; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">Instagram</a>
+                <a href="https://x.com/nexbyteind" style="background: #000; border: 1px solid #333; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">X (Twitter)</a>
+                <a href="https://youtube.com/@nexbyteind?si=XET9tJAyE4lWN413" style="background: #FF0000; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">YouTube</a>
+                <a href="https://www.facebook.com/profile.php?id=61584986327411" style="background: #1877F2; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">Facebook</a>
+            </div>
+
+            <p style="margin-top: 30px; font-size: 12px; color: #6b7280;">&copy; ${new Date().getFullYear()} NexByte Services. All rights reserved.</p>
+        </div>
+    </div>
+    `;
+};
+
+const getMarketingEmailTemplate = (data) => {
+    const { clientDetails, digitalMarketingRequirements } = data;
+    const serviceTitle = clientDetails.selectedService || "Digital Marketing";
+
+    // Marketing Service Config
+    const marketingConfig = {
+        "Social Media Management": {
+            color: "#ec4899",
+            desc: "End-to-end management with content planning, scheduling, and community engagement."
+        },
+        "Social Media Ads": {
+            color: "#8b5cf6",
+            desc: "Strategic paid campaigns with targeting, A/B testing, and ROI optimization."
+        },
+        "Video Content Strategy": {
+            color: "#ef4444",
+            desc: "Engaging video content optimized for Reels, Shorts, and long-form platforms."
+        },
+        "Audience Growth": {
+            color: "#10b981",
+            desc: "Organic strategies to build a loyal community and increase followers."
+        },
+        "Branding & Design": {
+            color: "#f59e0b",
+            desc: "Complete identity design including logos, color palettes, and brand guidelines."
+        }
+    };
+    const config = marketingConfig[serviceTitle] || { color: "#ec4899", desc: "Marketing Services" };
+
+    // Format Requirements
+    // digitalMarketingRequirements can have nested objects (like platforms). We flatten mostly for email.
+    let reqsHtml = ``;
+    if (digitalMarketingRequirements.serviceType) reqsHtml += `<p style="margin: 5px 0;"><strong>Service Type:</strong> ${digitalMarketingRequirements.serviceType}</p>`;
+
+    // Handle platforms object if exists
+    if (digitalMarketingRequirements.platforms) {
+        if (Array.isArray(digitalMarketingRequirements.platforms)) {
+            reqsHtml += `<p style="margin: 5px 0;"><strong>Platforms:</strong> ${digitalMarketingRequirements.platforms.join(', ')}</p>`;
+        } else {
+            const plats = Object.keys(digitalMarketingRequirements.platforms).join(', ');
+            reqsHtml += `<p style="margin: 5px 0;"><strong>Platforms:</strong> ${plats}</p>`;
+        }
+    }
+
+    // Other common fields
+    if (digitalMarketingRequirements.monthlyAdSpend) reqsHtml += `<p style="margin: 5px 0;"><strong>Ad Spend:</strong> ${digitalMarketingRequirements.monthlyAdSpend}</p>`;
+    if (digitalMarketingRequirements.adObjective) reqsHtml += `<p style="margin: 5px 0;"><strong>Objective:</strong> ${digitalMarketingRequirements.adObjective}</p>`;
+
+    return `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; color: #333; line-height: 1.6;">
+        <!-- Header -->
+        <div style="background-color: ${config.color}; padding: 30px; border-radius: 12px 12px 0 0; text-align: center; color: white;">
+            <h1 style="margin: 0; font-size: 28px;">${serviceTitle}</h1>
+            <p style="margin: 10px 0 0; opacity: 0.9; font-size: 16px;">${config.desc}</p>
+        </div>
+
+        <!-- Body -->
+        <div style="padding: 30px; border: 1px solid #e5e7eb; border-top: none; background-color: #fff;">
+            <p style="font-size: 16px;">Hello <strong>${clientDetails.fullName}</strong>,</p>
+            <p style="font-size: 16px; color: #555;">Thank you for your interest in our <strong>${serviceTitle}</strong> services. Our marketing strategists are reviewing your requirements.</p>
+
+            <!-- Submission Summary -->
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                <h3 style="color: #1f2937; margin-bottom: 15px;">Your Marketing Inquiry</h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div>
+                        <p style="margin: 5px 0; font-size: 14px;"><strong>Business:</strong> ${clientDetails.businessName || 'N/A'}</p>
+                        <p style="margin: 5px 0; font-size: 14px;"><strong>Budget:</strong> ${clientDetails.monthlyBudgetRange || 'N/A'}</p>
+                        <p style="margin: 5px 0; font-size: 14px;"><strong>Goal:</strong> ${clientDetails.primaryGoal || 'N/A'}</p>
+                    </div>
+                    <div style="font-size: 14px;">
+                       ${reqsHtml}
+                    </div>
+                </div>
+                 <p style="margin: 15px 0 5px; font-size: 14px;"><strong>Additional Notes:</strong></p>
+                 <p style="margin: 0; font-size: 14px; font-style: italic; color: #666;">"${clientDetails.additionalNotes}"</p>
+            </div>
+        </div>
+
+        <!-- Big Footer (Contact & Socials) -->
+        <div style="background-color: #111827; color: white; padding: 40px 30px; border-radius: 0 0 12px 12px; text-align: center;">
+            <h3 style="margin-top: 0; color: #fff;">Boost your brand with NexByte!</h3>
+            <p style="color: #9ca3af; margin-bottom: 30px;">Connect with us for more insights.</p>
+
+            <!-- Contact Info -->
+             <div style="margin-bottom: 30px; font-size: 14px;">
+                <p style="margin: 5px 0;">📞 <strong>Phone:</strong> 8247872473</p>
+                <p style="margin: 5px 0;">📧 <strong>Email:</strong> nexbyteind@gmail.com | lokesh@nexbyte.com</p>
+            </div>
+
+            <!-- Social Links Grid -->
+            <div style="display: inline-flex; gap: 15px; flex-wrap: wrap; justify-content: center;">
+                <a href="https://www.linkedin.com/company/nexbyte-services/" style="background: #0077b5; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">LinkedIn</a>
+                <a href="https://www.instagram.com/nexbyte_tech?igsh=OWJpZnZjd25hZ2p5&utm_source=qr" style="background: #E1306C; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">Instagram</a>
+                <a href="https://x.com/nexbyteind" style="background: #000; border: 1px solid #333; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">X (Twitter)</a>
+                <a href="https://youtube.com/@nexbyteind?si=XET9tJAyE4lWN413" style="background: #FF0000; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">YouTube</a>
+                <a href="https://www.facebook.com/profile.php?id=61584986327411" style="background: #1877F2; color: white; text-decoration: none; padding: 10px 15px; border-radius: 5px; font-size: 13px; font-weight: bold;">Facebook</a>
+            </div>
+
+            <p style="margin-top: 30px; font-size: 12px; color: #6b7280;">&copy; ${new Date().getFullYear()} NexByte Services. All rights reserved.</p>
+        </div>
+    </div>
+    `;
+};
+
+
+// --- APPLICATIONS ---
 app.post('/api/applications', async (req, res) => {
     try {
-        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const database = await connectDB();
         const applicationData = {
             ...req.body,
             submittedAt: new Date()
         };
-        const result = await db.collection('applications').insertOne(applicationData);
+
+        const result = await database.collection('applications').insertOne(applicationData);
+
+        // Send Welcome Email (Hackathons)
+        if (req.body.hackathonId) {
+            const hackathon = await database.collection('hackathons').findOne({ _id: new ObjectId(req.body.hackathonId) });
+
+            if (hackathon) {
+                const recipientEmail = req.body.participantType === 'Team' ? req.body.leader?.email : req.body.email;
+                const recipientName = req.body.participantType === 'Team' ? req.body.leader?.fullName : req.body.fullName;
+
+                const html = getHackathonWelcomeTemplate(recipientName, hackathon.name, hackathon.whatsappGroupLink);
+                sendEmail(recipientEmail, `Welcome to ${hackathon.name}! 🚀`, html).catch(err => console.error("Async email error:", err));
+            }
+        }
+
         res.status(201).json({ success: true, message: 'Application submitted', id: result.insertedId });
     } catch (error) {
         console.error('Error submitting application:', error);
@@ -238,12 +639,30 @@ app.delete('/api/programs/:id', async (req, res) => {
 // --- PROGRAM APPLICATIONS ---
 app.post('/api/program-applications', async (req, res) => {
     try {
-        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const database = await connectDB();
         const applicationData = {
             ...req.body,
             submittedAt: new Date()
         };
-        const result = await db.collection('program_applications').insertOne(applicationData);
+        const result = await database.collection('program_applications').insertOne(applicationData);
+
+        // Fetch program details for email
+        let programTitle = "Program";
+        // programType should be passed from frontend ("Training" or "Internship")
+        // logic below uses generic fallback if not found, but we try to find it.
+        const collectionName = 'programs'; // Assuming both stored in 'programs'
+        let programId = req.body.trainingId || req.body.internshipId;
+
+        if (programId) {
+            const program = await database.collection(collectionName).findOne({ _id: new ObjectId(programId) });
+            if (program) programTitle = program.title;
+        }
+
+        const subject = `Application Received: ${programTitle}`;
+        const html = getProgramEmailTemplate(req.body.fullName, programTitle, req.body.programType || "Program");
+
+        sendEmail(req.body.email, subject, html).catch(console.error);
+
         res.status(201).json({ success: true, message: 'Application submitted', id: result.insertedId });
     } catch (error) {
         console.error('Error submitting program application:', error);
@@ -265,13 +684,22 @@ app.get('/api/program-applications', async (req, res) => {
 // --- TECHNOLOGY APPLICATIONS ---
 app.post('/api/technology-applications', async (req, res) => {
     try {
-        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const database = await connectDB();
         const applicationData = {
             ...req.body,
             submittedAt: new Date(),
             status: 'New' // New, In Progress, Completed
         };
-        const result = await db.collection('technology_applications').insertOne(applicationData);
+        const result = await database.collection('technology_applications').insertOne(applicationData);
+
+        // Send Email
+        const email = req.body.commonDetails?.email;
+        if (email) {
+            const subject = `${req.body.serviceCategory} Enquiry via NexByte Technology`;
+            const html = getTechnologyEmailTemplate(req.body); // Pass entire body
+            sendEmail(email, subject, html).catch(console.error);
+        }
+
         res.status(201).json({ success: true, message: 'Application submitted', id: result.insertedId });
     } catch (error) {
         console.error('Error submitting technology application:', error);
@@ -293,13 +721,25 @@ app.get('/api/technology-applications', async (req, res) => {
 // --- STAFFING APPLICATIONS ---
 app.post('/api/staffing-applications', async (req, res) => {
     try {
-        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const database = await connectDB();
         const applicationData = {
             ...req.body,
             submittedAt: new Date(),
             status: 'New'
         };
-        const result = await db.collection('staffing_applications').insertOne(applicationData);
+        const result = await database.collection('staffing_applications').insertOne(applicationData);
+
+        // Send Email
+        const contactPerson = req.body.companyDetails?.contactPerson || "User";
+        const email = req.body.companyDetails?.email;
+        const serviceCategory = req.body.serviceCategory || "Staffing Service";
+
+        if (email) {
+            const subject = `${serviceCategory} Request Received - NexByte`;
+            const html = getStaffingEmailTemplate(contactPerson, serviceCategory);
+            sendEmail(email, subject, html).catch(console.error);
+        }
+
         res.status(201).json({ success: true, message: 'Application submitted', id: result.insertedId });
     } catch (error) {
         console.error('Error submitting staffing application:', error);
@@ -330,6 +770,15 @@ app.post('/api/marketing-applications', async (req, res) => {
             status: 'New'
         };
         const result = await db.collection('marketing_applications').insertOne(applicationData);
+
+        // Send Email
+        const email = req.body.clientDetails?.email;
+        if (email) {
+            const subject = `Marketing Inquiry Received: ${req.body.clientDetails?.selectedService || 'Digital Marketing'}`;
+            const html = getMarketingEmailTemplate(req.body);
+            sendEmail(email, subject, html).catch(console.error);
+        }
+
         res.status(201).json({ success: true, message: 'Application submitted', id: result.insertedId });
     } catch (error) {
         console.error('Error submitting marketing application:', error);

@@ -21,22 +21,38 @@ app.use(cors({
 app.use(express.json());
 
 // MongoDB Connection
+// MongoDB Connection
 const uri = process.env.MONGODB_URI;
 const client = new MongoClient(uri);
 
 let db;
 
 async function connectDB() {
+    if (db) return db;
     try {
         await client.connect();
         const dbName = process.env.DB_NAME || 'nexbyteind_db_user';
         db = client.db(dbName);
         console.log(`Connected to MongoDB: ${dbName}`);
+        return db;
     } catch (err) {
         console.error("MongoDB connection error:", err);
+        throw err;
     }
 }
-connectDB();
+
+// Middleware to ensure DB connection
+app.use('/api', async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (error) {
+        console.error("Failed to connect to DB in middleware:", error);
+        res.status(500).json({ success: false, message: 'Database connection failed' });
+    }
+});
+
+connectDB().catch(console.error);
 
 // Serve static files (Admin Dashboard)
 app.use(express.static('public'));

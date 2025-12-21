@@ -89,12 +89,27 @@ app.post('/api/hackathons', async (req, res) => {
     try {
         const database = await connectDB();
         const hackathonData = {
-            ...req.body,
-            whatsappGroupLink: req.body.whatsappGroupLink || "", // Add this field
+            name: req.body.name,
+            mode: req.body.mode,
+            description: req.body.description,
+            teamSize: req.body.teamSize,
+            isPaid: req.body.isPaid,
+            techStack: req.body.techStack,
+            startDate: req.body.startDate,
+            endDate: req.body.endDate,
+            registrationDeadline: req.body.registrationDeadline,
+            helplineNumber: req.body.helplineNumber || "",
+            organizerContact: req.body.organizerContact || "",
+            whatsappGroupLink: req.body.whatsappGroupLink || "",
+            prizeMoney: req.body.prizeMoney || "",
+            benefits: req.body.benefits || "",
             createdAt: new Date(),
             status: 'active',
             isHidden: false
         };
+        
+        console.log('Creating hackathon with data:', hackathonData);
+        
         const result = await database.collection('hackathons').insertOne(hackathonData);
         res.status(201).json({ success: true, message: 'Hackathon created', id: result.insertedId });
     } catch (error) {
@@ -154,6 +169,47 @@ app.put('/api/hackathons/:id/visibility', async (req, res) => {
         }
     } catch (error) {
         console.error('Error updating visibility:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.put('/api/hackathons/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        
+        const updateData = {
+            name: req.body.name,
+            mode: req.body.mode,
+            description: req.body.description,
+            teamSize: req.body.teamSize,
+            isPaid: req.body.isPaid,
+            techStack: req.body.techStack,
+            startDate: req.body.startDate,
+            endDate: req.body.endDate,
+            registrationDeadline: req.body.registrationDeadline,
+            helplineNumber: req.body.helplineNumber || "",
+            organizerContact: req.body.organizerContact || "",
+            whatsappGroupLink: req.body.whatsappGroupLink || "",
+            prizeMoney: req.body.prizeMoney || "",
+            benefits: req.body.benefits || "",
+            updatedAt: new Date()
+        };
+
+        console.log('Updating hackathon with data:', updateData);
+
+        const result = await db.collection('hackathons').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: updateData }
+        );
+
+        if (result.matchedCount === 0) {
+            res.status(404).json({ success: false, message: 'Hackathon not found' });
+        } else {
+            res.status(200).json({ success: true, message: 'Hackathon updated' });
+        }
+    } catch (error) {
+        console.error('Error updating hackathon:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
@@ -632,6 +688,36 @@ app.delete('/api/programs/:id', async (req, res) => {
         }
     } catch (error) {
         console.error('Error deleting program:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.put('/api/programs/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        
+        const updateData = {
+            ...req.body,
+            updatedAt: new Date()
+        };
+        // Remove _id if present in body to avoid conflict
+        delete updateData._id;
+
+        console.log('Updating program with data:', updateData);
+
+        const result = await db.collection('programs').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: updateData }
+        );
+
+        if (result.matchedCount === 0) {
+            res.status(404).json({ success: false, message: 'Program not found' });
+        } else {
+            res.status(200).json({ success: true, message: 'Program updated' });
+        }
+    } catch (error) {
+        console.error('Error updating program:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });

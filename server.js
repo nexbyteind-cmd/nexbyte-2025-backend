@@ -937,9 +937,13 @@ app.put('/api/testimonials/:id/status', async (req, res) => {
     }
 });
 
-app.get('/', (req, res) => {
-    res.send('Backend is running');
-});
+// Export the Express API for Vercel
+module.exports = app;
 
-// Start Server (Found at end of file)
-// Note: Removed duplicate listen call if it existed previously.
+// Only listen if not running in a serverless environment (Vercel)
+if (require.main === module) {
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}

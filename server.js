@@ -937,6 +937,10 @@ app.put('/api/testimonials/:id/status', async (req, res) => {
     }
 });
 
+app.get('/', (req, res) => {
+    res.send('Backend is running');
+});
+
 // Export the Express API for Vercel
 module.exports = app;
 

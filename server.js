@@ -797,6 +797,75 @@ app.get('/api/marketing-applications', async (req, res) => {
     }
 });
 
+// --- DELETE ENDPOINTS FOR ADMIN PANEL ---
+
+const createDeleteEndpoint = (collectionName, routeName) => {
+    app.delete(`/api/${routeName}/:id`, async (req, res) => {
+        try {
+            if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+            const { id } = req.params;
+            const result = await db.collection(collectionName).deleteOne({ _id: new ObjectId(id) });
+            if (result.deletedCount === 1) {
+                res.status(200).json({ success: true, message: 'Deleted successfully' });
+            } else {
+                res.status(404).json({ success: false, message: 'Not found' });
+            }
+        } catch (error) {
+            console.error(`Error deleting from ${collectionName}:`, error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+};
+
+createDeleteEndpoint('contacts', 'contacts');
+createDeleteEndpoint('applications', 'applications'); // Hackathon apps
+createDeleteEndpoint('program_applications', 'program-applications');
+createDeleteEndpoint('technology_applications', 'technology-applications');
+createDeleteEndpoint('staffing_applications', 'staffing-applications');
+createDeleteEndpoint('marketing_applications', 'marketing-applications');
+
+// --- ADMIN EMAIL ENDPOINT ---
+app.post('/api/admin/send-email', async (req, res) => {
+    try {
+        const { to, subject, body, links } = req.body;
+
+        if (!to || !subject || !body) {
+            return res.status(400).json({ success: false, message: 'Missing required fields' });
+        }
+
+        // Construct HTML content
+        let linksHtml = '';
+        if (links && links.length > 0) {
+            linksHtml = `
+            <div style="margin-top: 20px; padding: 15px; background-color: #f3f4f6; border-radius: 8px;">
+                <p style="margin: 0 0 10px; font-weight: bold;">Useful Links:</p>
+                <ul style="margin: 0; padding-left: 20px;">
+                    ${links.map(link => `<li><a href="${link.url}" style="color: #2563eb;">${link.label || link.url}</a></li>`).join('')}
+                </ul>
+            </div>`;
+        }
+
+        const htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; line-height: 1.6; color: #333;">
+            <div style="padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                <h2 style="color: #2563eb; margin-top: 0;">NexByte Update</h2>
+                <div style="white-space: pre-wrap;">${body}</div>
+                ${linksHtml}
+                <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+                <p style="font-size: 12px; color: #6b7280; text-align: center;">Reference: Admin Communication</p>
+                <p style="font-size: 12px; color: #6b7280; text-align: center;">&copy; ${new Date().getFullYear()} NexByte Services</p>
+            </div>
+        </div>`;
+
+        await sendEmail(to, subject, htmlContent);
+        res.status(200).json({ success: true, message: 'Email sent successfully' });
+    } catch (error) {
+        console.error('Error sending admin email:', error);
+        res.status(500).json({ success: false, message: 'Failed to send email' });
+    }
+});
+
+
 // --- TESTIMONIALS & CASE STUDIES ---
 app.get('/api/testimonials', async (req, res) => {
     try {
@@ -872,6 +941,5 @@ app.get('/', (req, res) => {
     res.send('Backend is running');
 });
 
-app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
-});
+// Start Server (Found at end of file)
+// Note: Removed duplicate listen call if it existed previously.

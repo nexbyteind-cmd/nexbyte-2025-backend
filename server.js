@@ -107,9 +107,9 @@ app.post('/api/hackathons', async (req, res) => {
             status: 'active',
             isHidden: false
         };
-        
+
         console.log('Creating hackathon with data:', hackathonData);
-        
+
         const result = await database.collection('hackathons').insertOne(hackathonData);
         res.status(201).json({ success: true, message: 'Hackathon created', id: result.insertedId });
     } catch (error) {
@@ -177,7 +177,7 @@ app.put('/api/hackathons/:id', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
         const { id } = req.params;
-        
+
         const updateData = {
             name: req.body.name,
             mode: req.body.mode,
@@ -271,12 +271,23 @@ const getHackathonWelcomeTemplate = (participantName, hackathonName, whatsappLin
     </div>
 `;
 
-const getProgramEmailTemplate = (name, title, type) => `
+const getProgramEmailTemplate = (name, title, type, whatsappLink) => `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
         <h2 style="color: #7c3aed;">Application Received: ${title}</h2>
         <p>Dear <strong>${name}</strong>,</p>
         <p>Thank you for applying for the <strong>${type}</strong> program at NexByte.</p>
         <p>We have received your application and our team is currently reviewing it.</p>
+        
+        ${whatsappLink ? `
+        <div style="background-color: #dcfce7; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: center;">
+            <p style="margin: 0; color: #166534; font-weight: bold;">Join the Official WhatsApp Group</p>
+            <a href="${whatsappLink}" style="display: inline-block; margin-top: 10px; background-color: #25D366; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                Join Group Now
+            </a>
+            <p style="margin-top: 10px; font-size: 12px; color: #555;">Or click here: <a href="${whatsappLink}">${whatsappLink}</a></p>
+        </div>
+        ` : ''}
+
         <p>You will receive further instructions shortly regarding the next steps.</p>
         <br/>
         <p>Best Regards,<br/><strong>NexByte Learning Team</strong></p>
@@ -696,7 +707,7 @@ app.put('/api/programs/:id', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
         const { id } = req.params;
-        
+
         const updateData = {
             ...req.body,
             updatedAt: new Date()
@@ -734,6 +745,7 @@ app.post('/api/program-applications', async (req, res) => {
 
         // Fetch program details for email
         let programTitle = "Program";
+        let whatsappLink = "";
         // programType should be passed from frontend ("Training" or "Internship")
         // logic below uses generic fallback if not found, but we try to find it.
         const collectionName = 'programs'; // Assuming both stored in 'programs'
@@ -741,11 +753,14 @@ app.post('/api/program-applications', async (req, res) => {
 
         if (programId) {
             const program = await database.collection(collectionName).findOne({ _id: new ObjectId(programId) });
-            if (program) programTitle = program.title;
+            if (program) {
+                programTitle = program.title;
+                whatsappLink = program.whatsappGroupLink;
+            }
         }
 
         const subject = `Application Received: ${programTitle}`;
-        const html = getProgramEmailTemplate(req.body.fullName, programTitle, req.body.programType || "Program");
+        const html = getProgramEmailTemplate(req.body.fullName, programTitle, req.body.programType || "Program", whatsappLink);
 
         sendEmail(req.body.email, subject, html).catch(console.error);
 

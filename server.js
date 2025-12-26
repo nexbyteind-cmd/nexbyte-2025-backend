@@ -77,6 +77,10 @@ app.post('/api/contact', async (req, res) => {
         if (!db) return res.status(500).json({ success: false, message: 'Database not initialized' });
         const contactData = { ...req.body, submittedAt: new Date() };
         const result = await db.collection('contacts').insertOne(contactData);
+
+        // Send Welcome Email
+        await sendContactWelcomeEmail(contactData).catch(console.error);
+
         res.status(201).json({ success: true, message: 'Contact saved', id: result.insertedId });
     } catch (error) {
         console.error('Error saving contact:', error);
@@ -232,8 +236,14 @@ const transporter = nodemailer.createTransport({
 
 
 // Helper to send generic email
+// Helper to send generic email
 async function sendEmail(toEmail, subject, htmlContent) {
-    if (!toEmail) return;
+    if (!toEmail) {
+        console.error('[sendEmail] Error: No recipient email provided.');
+        return;
+    }
+
+    console.log(`[sendEmail] Attempting to send email to: ${toEmail}, Subject: ${subject}`);
 
     const mailOptions = {
         from: `"NexByte Team" <${process.env.SMTP_EMAIL}>`,
@@ -243,10 +253,11 @@ async function sendEmail(toEmail, subject, htmlContent) {
     };
 
     try {
-        await transporter.sendMail(mailOptions);
-        console.log(`Email sent to ${toEmail}`);
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`[sendEmail] Success! Email sent to ${toEmail}. MessageID: ${info.messageId}`);
     } catch (error) {
-        console.error("Error sending email:", error);
+        console.error(`[sendEmail] Failed to send email to ${toEmail}. Error:`, error);
+        throw error; // Propagate error so callers know it failed
     }
 }
 
@@ -505,6 +516,119 @@ const getTechnologyEmailTemplate = (data) => {
     `;
 };
 
+const getContactWelcomeTemplate = (firstName) => `
+<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; color: #333; line-height: 1.6; background-color:#f9fafb; padding:10px;">
+
+  <!-- Header -->
+  <div style="background-color: #2563eb; padding: 30px; border-radius: 14px 14px 0 0; text-align: center; color: white;">
+    <h1 style="margin: 0; font-size: 28px;">Welcome to NexByte 👋</h1>
+    <p style="margin: 12px 0 0; opacity: 0.95; font-size: 16px;">
+      Your partner in Digital Growth & Technology Innovation
+    </p>
+  </div>
+
+  <!-- Body -->
+  <div style="padding: 30px; border: 1px solid #e5e7eb; border-top: none; background-color: #ffffff;">
+    
+    <p style="font-size: 16px;">Hello <strong>${firstName}</strong>,</p>
+
+    <p style="font-size: 16px; color: #555;">
+      Thank you for connecting with <strong>NexByte Services</strong>.  
+      We’ve successfully received your inquiry and our team is already reviewing it.
+    </p>
+
+    <p style="font-size: 16px; color: #555;">
+      One of our experts will reach out to you within <strong>24 hours</strong> to understand your requirements and help you move forward confidently.
+    </p>
+
+    <!-- Website CTA -->
+    <div style="text-align:center; margin: 25px 0;">
+      <a href="https://www.nexbyteind.com/"
+         style="display:inline-block; background:#2563eb; color:#fff; padding:12px 22px; border-radius:8px; text-decoration:none; font-weight:bold; font-size:14px;">
+        Visit Our Website 🌐
+      </a>
+    </div>
+
+    <!-- Services Section -->
+    <div style="margin: 30px 0; padding: 22px; background-color: #f3f4f6; border-radius: 10px;">
+      <h3 style="margin-top: 0; color: #2563eb; text-align: center;">Our Core Services</h3>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px;">
+
+        <a href="https://www.nexbyteind.com/services/marketing"
+           style="background:#fff; padding:12px; border-radius:8px; text-align:center; text-decoration:none; font-size:14px; font-weight:bold; color:#374151;">
+           📈 Digital Marketing
+        </a>
+
+        <a href="https://www.nexbyteind.com/services/technology"
+           style="background:#fff; padding:12px; border-radius:8px; text-align:center; text-decoration:none; font-size:14px; font-weight:bold; color:#374151;">
+           💻 Technology Solutions
+        </a>
+
+        <a href="https://www.nexbyteind.com/services/staffing"
+           style="background:#fff; padding:12px; border-radius:8px; text-align:center; text-decoration:none; font-size:14px; font-weight:bold; color:#374151;">
+           👥 Staffing & Hiring
+        </a>
+
+        <a href="https://www.nexbyteind.com/services/training"
+           style="background:#fff; padding:12px; border-radius:8px; text-align:center; text-decoration:none; font-size:14px; font-weight:bold; color:#374151;">
+           🎓 Training Programs
+        </a>
+
+        <a href="https://www.nexbyteind.com/services/hackathons"
+           style="grid-column: span 2; background:#fff; padding:12px; border-radius:8px; text-align:center; text-decoration:none; font-size:14px; font-weight:bold; color:#374151;">
+           🚀 Hackathons & Innovation Events
+        </a>
+
+      </div>
+    </div>
+
+    <!-- Highlight Events -->
+    <div style="margin: 30px 0; padding: 22px; background: linear-gradient(135deg,#2563eb,#1e40af); border-radius: 12px; text-align:center; color:#fff;">
+      <h3 style="margin:0 0 10px;">✨ Upcoming Events & Programs</h3>
+      <p style="margin:0 0 16px; font-size:14px; opacity:0.95;">
+        Workshops • Hackathons • Live Training • Community Events
+      </p>
+      <a href="https://www.nexbyteind.com/events"
+         style="display:inline-block; background:#ffffff; color:#1e40af; padding:10px 20px; border-radius:8px; text-decoration:none; font-weight:bold; font-size:14px;">
+        Explore Events →
+      </a>
+    </div>
+
+    <!-- Contact CTA -->
+    <div style="text-align:center; margin-top:30px;">
+      <p style="font-weight:bold; color:#1f2937;">Need immediate assistance?</p>
+      <a href="https://www.nexbyteind.com/contact"
+         style="display:inline-block; margin-top:8px; background:#10b981; color:#ffffff; padding:10px 20px; border-radius:8px; text-decoration:none; font-weight:bold; font-size:14px;">
+         Contact Us
+      </a>
+    </div>
+
+    <!-- Social Links -->
+    <div style="text-align: center; margin-top: 35px;">
+      <p style="font-weight: bold; color: #1f2937; margin-bottom: 18px;">Connect With Us</p>
+      <div style="display: inline-flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+        <a href="https://www.linkedin.com/company/nexbyte-services/" style="background:#0077b5; color:#fff; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:12px; font-weight:bold;">LinkedIn</a>
+        <a href="https://www.instagram.com/nexbyte_tech?igsh=OWJpZnZjd25hZ2p5&utm_source=qr" style="background:#E1306C; color:#fff; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:12px; font-weight:bold;">Instagram</a>
+        <a href="https://x.com/nexbyteind" style="background:#000; color:#fff; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:12px; font-weight:bold;">X</a>
+        <a href="https://youtube.com/@nexbyteind?si=XET9tJAyE4lWN413" style="background:#FF0000; color:#fff; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:12px; font-weight:bold;">YouTube</a>
+        <a href="https://www.facebook.com/profile.php?id=61584986327411" style="background:#1877F2; color:#fff; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:12px; font-weight:bold;">Facebook</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div style="background-color: #111827; color: white; padding: 18px; border-radius: 0 0 14px 14px; text-align: center; font-size: 12px;">
+    <p style="margin: 0; color: #9ca3af;">
+      © ${new Date().getFullYear()} NexByte Services. All rights reserved.
+    </p>
+  </div>
+
+</div>
+`;
+
+
 const getMarketingEmailTemplate = (data) => {
     const { clientDetails, digitalMarketingRequirements } = data;
     const serviceTitle = clientDetails.selectedService || "Digital Marketing";
@@ -627,13 +751,8 @@ app.post('/api/applications', async (req, res) => {
         // Send Welcome Email (Hackathons)
         if (req.body.hackathonId) {
             const hackathon = await database.collection('hackathons').findOne({ _id: new ObjectId(req.body.hackathonId) });
-
             if (hackathon) {
-                const recipientEmail = req.body.participantType === 'Team' ? req.body.leader?.email : req.body.email;
-                const recipientName = req.body.participantType === 'Team' ? req.body.leader?.fullName : req.body.fullName;
-
-                const html = getHackathonWelcomeTemplate(recipientName, hackathon.name, hackathon.whatsappGroupLink);
-                sendEmail(recipientEmail, `Welcome to ${hackathon.name}! 🚀`, html).catch(err => console.error("Async email error:", err));
+                await sendHackathonWelcomeEmail(req.body, hackathon).catch(err => console.error("Async email error:", err));
             }
         }
 
@@ -750,8 +869,7 @@ app.post('/api/program-applications', async (req, res) => {
         let programTitle = "Program";
         let whatsappLink = "";
         // programType should be passed from frontend ("Training" or "Internship")
-        // logic below uses generic fallback if not found, but we try to find it.
-        const collectionName = 'programs'; // Assuming both stored in 'programs'
+        const collectionName = 'programs';
         let programId = req.body.trainingId || req.body.internshipId;
 
         if (programId) {
@@ -762,10 +880,7 @@ app.post('/api/program-applications', async (req, res) => {
             }
         }
 
-        const subject = `Application Received: ${programTitle}`;
-        const html = getProgramEmailTemplate(req.body.fullName, programTitle, req.body.programType || "Program", whatsappLink);
-
-        sendEmail(req.body.email, subject, html).catch(console.error);
+        await sendProgramApplicationEmail(req.body, programTitle, whatsappLink, req.body.programType).catch(console.error);
 
         res.status(201).json({ success: true, message: 'Application submitted', id: result.insertedId });
     } catch (error) {
@@ -797,12 +912,7 @@ app.post('/api/technology-applications', async (req, res) => {
         const result = await database.collection('technology_applications').insertOne(applicationData);
 
         // Send Email
-        const email = req.body.commonDetails?.email;
-        if (email) {
-            const subject = `${req.body.serviceCategory} Enquiry via NexByte Technology`;
-            const html = getTechnologyEmailTemplate(req.body); // Pass entire body
-            sendEmail(email, subject, html).catch(console.error);
-        }
+        await sendTechApplicationEmail(req.body).catch(console.error);
 
         res.status(201).json({ success: true, message: 'Application submitted', id: result.insertedId });
     } catch (error) {
@@ -834,15 +944,7 @@ app.post('/api/staffing-applications', async (req, res) => {
         const result = await database.collection('staffing_applications').insertOne(applicationData);
 
         // Send Email
-        const contactPerson = req.body.companyDetails?.contactPerson || "User";
-        const email = req.body.companyDetails?.email;
-        const serviceCategory = req.body.serviceCategory || "Staffing Service";
-
-        if (email) {
-            const subject = `${serviceCategory} Request Received - NexByte`;
-            const html = getStaffingEmailTemplate(contactPerson, serviceCategory);
-            sendEmail(email, subject, html).catch(console.error);
-        }
+        await sendStaffingApplicationEmail(req.body).catch(console.error);
 
         res.status(201).json({ success: true, message: 'Application submitted', id: result.insertedId });
     } catch (error) {
@@ -864,6 +966,154 @@ app.get('/api/staffing-applications', async (req, res) => {
 
 
 
+// --- REUSABLE EMAIL HELPERS ---
+
+async function sendHackathonWelcomeEmail(application, hackathon) {
+    if (!hackathon) return;
+    const recipientEmail = application.participantType === 'Team' ? application.leader?.email : application.email;
+    const recipientName = application.participantType === 'Team' ? application.leader?.fullName : application.fullName;
+    const html = getHackathonWelcomeTemplate(recipientName, hackathon.name, hackathon.whatsappGroupLink);
+    await sendEmail(recipientEmail, `Welcome to ${hackathon.name}! 🚀`, html);
+}
+
+async function sendProgramApplicationEmail(application, programTitle, whatsappLink, programType) {
+    const subject = `Application Received: ${programTitle}`;
+    const html = getProgramEmailTemplate(application.fullName, programTitle, programType || "Program", whatsappLink);
+    await sendEmail(application.email, subject, html);
+}
+
+async function sendTechApplicationEmail(application) {
+    const email = application.commonDetails?.email;
+    if (email) {
+        const subject = `${application.serviceCategory} Enquiry via NexByte Technology`;
+        const html = getTechnologyEmailTemplate(application);
+        await sendEmail(email, subject, html);
+    }
+}
+
+async function sendStaffingApplicationEmail(application) {
+    const contactPerson = application.companyDetails?.contactPerson || "User";
+    const email = application.companyDetails?.email;
+    const serviceCategory = application.serviceCategory || "Staffing Service";
+    if (email) {
+        const subject = `${serviceCategory} Request Received - NexByte`;
+        const html = getStaffingEmailTemplate(contactPerson, serviceCategory);
+        await sendEmail(email, subject, html);
+    }
+}
+
+async function sendMarketingApplicationEmail(application) {
+    const email = application.clientDetails?.email;
+    if (email) {
+        const subject = `Marketing Inquiry Received: ${application.clientDetails?.selectedService || 'Digital Marketing'}`;
+        const html = getMarketingEmailTemplate(application);
+        await sendEmail(email, subject, html);
+    }
+}
+
+async function sendContactWelcomeEmail(contact) {
+    const email = contact.email;
+    if (email) {
+        const subject = "Welcome to NexByte! We've received your message 🚀";
+        const html = getContactWelcomeTemplate(contact.firstName);
+        await sendEmail(email, subject, html);
+    }
+}
+
+
+// --- RESEND EMAIL ENDPOINTS ---
+
+app.post('/api/applications/:id/resend-email', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const application = await db.collection('applications').findOne({ _id: new ObjectId(id) });
+        if (!application) return res.status(404).json({ success: false, message: 'Application not found' });
+
+        const hackathon = await db.collection('hackathons').findOne({ _id: new ObjectId(application.hackathonId) });
+        if (!hackathon) return res.status(404).json({ success: false, message: 'Hackathon not found' });
+
+        await sendHackathonWelcomeEmail(application, hackathon);
+        res.status(200).json({ success: true, message: 'Email resent successfully' });
+    } catch (error) {
+        console.error('Error resending hackathon email:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.post('/api/program-applications/:id/resend-email', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const application = await db.collection('program_applications').findOne({ _id: new ObjectId(id) });
+        if (!application) return res.status(404).json({ success: false, message: 'Application not found' });
+
+        let programTitle = "Program";
+        let whatsappLink = "";
+        let programId = application.trainingId || application.internshipId;
+
+        if (programId) {
+            const program = await db.collection('programs').findOne({ _id: new ObjectId(programId) });
+            if (program) {
+                programTitle = program.title;
+                whatsappLink = program.whatsappGroupLink;
+            }
+        }
+
+        await sendProgramApplicationEmail(application, programTitle, whatsappLink, application.programType);
+        res.status(200).json({ success: true, message: 'Email resent successfully' });
+    } catch (error) {
+        console.error('Error resending program email:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.post('/api/technology-applications/:id/resend-email', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const application = await db.collection('technology_applications').findOne({ _id: new ObjectId(id) });
+        if (!application) return res.status(404).json({ success: false, message: 'Application not found' });
+
+        await sendTechApplicationEmail(application);
+        res.status(200).json({ success: true, message: 'Email resent successfully' });
+    } catch (error) {
+        console.error('Error resending technology email:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.post('/api/staffing-applications/:id/resend-email', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const application = await db.collection('staffing_applications').findOne({ _id: new ObjectId(id) });
+        if (!application) return res.status(404).json({ success: false, message: 'Application not found' });
+
+        await sendStaffingApplicationEmail(application);
+        res.status(200).json({ success: true, message: 'Email resent successfully' });
+    } catch (error) {
+        console.error('Error resending staffing email:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.post('/api/marketing-applications/:id/resend-email', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const application = await db.collection('marketing_applications').findOne({ _id: new ObjectId(id) });
+        if (!application) return res.status(404).json({ success: false, message: 'Application not found' });
+
+        await sendMarketingApplicationEmail(application);
+        res.status(200).json({ success: true, message: 'Email resent successfully' });
+    } catch (error) {
+        console.error('Error resending marketing email:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+
 // --- MARKETING APPLICATIONS ---
 app.post('/api/marketing-applications', async (req, res) => {
     try {
@@ -876,12 +1126,7 @@ app.post('/api/marketing-applications', async (req, res) => {
         const result = await db.collection('marketing_applications').insertOne(applicationData);
 
         // Send Email
-        const email = req.body.clientDetails?.email;
-        if (email) {
-            const subject = `Marketing Inquiry Received: ${req.body.clientDetails?.selectedService || 'Digital Marketing'}`;
-            const html = getMarketingEmailTemplate(req.body);
-            sendEmail(email, subject, html).catch(console.error);
-        }
+        await sendMarketingApplicationEmail(req.body).catch(console.error);
 
         res.status(201).json({ success: true, message: 'Application submitted', id: result.insertedId });
     } catch (error) {
@@ -928,12 +1173,33 @@ createDeleteEndpoint('technology_applications', 'technology-applications');
 createDeleteEndpoint('staffing_applications', 'staffing-applications');
 createDeleteEndpoint('marketing_applications', 'marketing-applications');
 
+app.post('/api/contacts/:id/resend-email', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const contact = await db.collection('contacts').findOne({ _id: new ObjectId(id) });
+        if (!contact) return res.status(404).json({ success: false, message: 'Contact not found' });
+
+        await sendContactWelcomeEmail(contact);
+        res.status(200).json({ success: true, message: 'Email resent successfully' });
+    } catch (error) {
+        console.error('Error resending contact email:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// --- ADMIN EMAIL ENDPOINT ---
 // --- ADMIN EMAIL ENDPOINT ---
 app.post('/api/admin/send-email', async (req, res) => {
+    const requestId = Date.now(); // Simple ID to track this request
+    console.log(`[API][${requestId}] POST /api/admin/send-email hit.`);
+    console.log(`[API][${requestId}] Request Body:`, JSON.stringify(req.body, null, 2));
+
     try {
         const { to, subject, body, links } = req.body;
 
         if (!to || !subject || !body) {
+            console.error(`[API][${requestId}] Missing required fields. to=${to}, subject=${subject}, bodyLength=${body ? body.length : 0}`);
             return res.status(400).json({ success: false, message: 'Missing required fields' });
         }
 
@@ -961,10 +1227,12 @@ app.post('/api/admin/send-email', async (req, res) => {
             </div>
         </div>`;
 
+        console.log(`[API][${requestId}] Calling sendEmail...`);
         await sendEmail(to, subject, htmlContent);
+        console.log(`[API][${requestId}] Email sent successfully.`);
         res.status(200).json({ success: true, message: 'Email sent successfully' });
     } catch (error) {
-        console.error('Error sending admin email:', error);
+        console.error(`[API][${requestId}] Error in /api/admin/send-email:`, error);
         res.status(500).json({ success: false, message: 'Failed to send email' });
     }
 });

@@ -222,10 +222,11 @@ app.put('/api/hackathons/:id', async (req, res) => {
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: "smtp-relay.brevo.com",
+    port: 587,
     auth: {
-        user: process.env.SMTP_EMAIL,
-        pass: process.env.SMTP_PASSWORD
+        user: process.env.BREVO_SMTP_USER,
+        pass: process.env.BREVO_SMTP_KEY
     }
 });
 
@@ -613,6 +614,7 @@ const getMarketingEmailTemplate = (data) => {
 
 // --- APPLICATIONS ---
 app.post('/api/applications', async (req, res) => {
+    console.log('[API] Received hackathon application request:', req.body.email);
     try {
         const database = await connectDB();
         const applicationData = {
@@ -735,6 +737,7 @@ app.put('/api/programs/:id', async (req, res) => {
 
 // --- PROGRAM APPLICATIONS ---
 app.post('/api/program-applications', async (req, res) => {
+    console.log('[API] Received program application request:', req.body.email);
     try {
         const database = await connectDB();
         const applicationData = {
@@ -1040,6 +1043,13 @@ app.put('/api/testimonials/:id/status', async (req, res) => {
 
 app.get('/', (req, res) => {
     res.send('Backend is running');
+});
+
+// Export the Express API for Vercel
+// --- 404 Debug Handler ---
+app.use((req, res, next) => {
+    console.log(`[404] Route not found: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ success: false, message: `Route not found: ${req.method} ${req.originalUrl}` });
 });
 
 // Export the Express API for Vercel

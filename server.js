@@ -1440,7 +1440,7 @@ app.put('/api/trainings/:id', async (req, res) => {
         // but here we want to update specific fields including the new ones.
         const {
             name, category, topics, duration, mode, description, syllabusLink, status, formFields, startDate, endDate, applyBy,
-            emailSubject, emailBody, emailLinks, timing, note, hiddenFields // NEW FIELDS
+            emailSubject, emailBody, emailLinks, timing, note, hiddenFields, communityLink // NEW FIELDS
         } = req.body;
 
         await db.collection('trainings').updateOne(
@@ -1448,7 +1448,7 @@ app.put('/api/trainings/:id', async (req, res) => {
             {
                 $set: {
                     name, category, topics, duration, mode, description, syllabusLink, status, formFields, startDate, endDate, applyBy,
-                    emailSubject, emailBody, emailLinks, timing, note, hiddenFields // NEW FIELDS
+                    emailSubject, emailBody, emailLinks, timing, note, hiddenFields, communityLink // NEW FIELDS
                 }
             }
         );

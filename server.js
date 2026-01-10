@@ -1436,11 +1436,21 @@ app.put('/api/trainings/:id', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
         const { id } = req.params;
-        const { name, category, topics, duration, mode, description, syllabusLink, status, formFields, startDate, endDate, applyBy } = req.body;
+        // Destructure known fields to ensure we don't accidentally wipe others if using $set with ...rest, 
+        // but here we want to update specific fields including the new ones.
+        const {
+            name, category, topics, duration, mode, description, syllabusLink, status, formFields, startDate, endDate, applyBy,
+            emailSubject, emailBody, emailLinks, timing, note, hiddenFields // NEW FIELDS
+        } = req.body;
 
         await db.collection('trainings').updateOne(
             { _id: new ObjectId(id) },
-            { $set: { name, category, topics, duration, mode, description, syllabusLink, status, formFields, startDate, endDate, applyBy } }
+            {
+                $set: {
+                    name, category, topics, duration, mode, description, syllabusLink, status, formFields, startDate, endDate, applyBy,
+                    emailSubject, emailBody, emailLinks, timing, note, hiddenFields // NEW FIELDS
+                }
+            }
         );
         res.status(200).json({ success: true, message: 'Training updated successfully' });
     } catch (error) {
@@ -1463,13 +1473,99 @@ app.delete('/api/trainings/:id', async (req, res) => {
 
 // --- TRAINING APPLICATIONS ---
 
+async function sendCustomTrainingEmail(application, training) {
+    const email = application.email;
+    if (!email) return;
+
+    // Use custom subject or default
+    const subject = training.emailSubject || `Registration Confirmed: ${training.name} 🎓`;
+
+    // Build Custom Body
+    // Replace simple placeholders if we want to support them, e.g., {{name}}
+    let bodyContent = training.emailBody || `Thank you for registering for <strong>${training.name}</strong> at NexByte! We are excited to have you on board to upgrade your skills.`;
+
+    // Simple replacement for name
+    bodyContent = bodyContent.replace(/{{name}}/g, application.applicantName || 'Learner');
+    bodyContent = bodyContent.replace(/\n/g, '<br>'); // Simple newline to break conversion
+
+    // Build Links Section
+    let linksHtml = '';
+    if (training.emailLinks && Array.isArray(training.emailLinks) && training.emailLinks.length > 0) {
+        linksHtml = `
+        <div style="margin-top: 25px; text-align: center;">
+            <p style="margin-bottom: 15px; font-weight: bold; color: #475569;">Quick Links:</p>
+            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                ${training.emailLinks.map(link => `
+                    <a href="${link.url}" style="
+                        display: inline-block; 
+                        padding: 10px 20px; 
+                        background-color: ${link.isButton ? '#6366f1' : 'transparent'}; 
+                        color: ${link.isButton ? '#ffffff' : '#6366f1'}; 
+                        border: ${link.isButton ? 'none' : '1px solid #6366f1'};
+                        text-decoration: none; 
+                        border-radius: 6px; 
+                        font-weight: 600;
+                        font-size: 14px;
+                        margin: 5px;
+                    ">${link.label}</a>
+                `).join('')}
+            </div>
+        </div>`;
+    }
+
+    const educationHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); padding: 30px; text-align: center; border-radius: 12px 12px 0 0; }
+            .header h1 { color: white; margin: 0; font-size: 24px; }
+            .content { background: #ffffff; padding: 30px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; }
+            .greeting { font-size: 18px; color: #1e293b; margin-bottom: 20px; }
+            .message { color: #475569; margin-bottom: 25px; }
+            .details-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>${training.emailSubject ? 'Update from NexByte' : 'Registration Confirmed! 🎓'}</h1>
+        </div>
+        <div class="content">
+            <h2 class="greeting">Hello ${application.applicantName || 'Learner'},</h2>
+            
+            <div class="message">
+                ${bodyContent}
+            </div>
+
+            ${linksHtml}
+
+            <div class="details-box">
+                <p><strong>Training:</strong> ${training.name}</p>
+                <p><strong>Mode:</strong> ${training.mode || 'Online / Hybrid'}</p>
+                ${training.timing ? `<p><strong>Timing:</strong> ${training.timing}</p>` : ''}
+            </div>
+
+            <div style="text-align: center; margin-top: 30px;">
+                <a href="https://www.nexbyteind.com" style="color: #64748b; text-decoration: none; font-size: 12px;">Visit Website</a>
+            </div>
+        </div>
+        <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} NexByte. All rights reserved.</p>
+        </div>
+    </body>
+    </html>
+    `;
+
+    await sendEmail(email, subject, educationHtml);
+}
+
 app.post('/api/apply-training', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
 
-        // Destructure to separate core fields from dynamic data if needed, or just store everything
-        // Storing everything in `dynamicData` except key fields for easier indexing
-        const { trainingName, applicantName, email, ...otherData } = req.body;
+        const { trainingName, applicantName, email, trainingId, ...otherData } = req.body;
 
         if (!applicantName || !email || !trainingName) {
             return res.status(400).json({ success: false, message: "Missing required fields" });
@@ -1477,17 +1573,62 @@ app.post('/api/apply-training', async (req, res) => {
 
         const application = {
             trainingName,
+            trainingId,
             applicantName,
             email,
-            dynamicData: otherData, // Stores LinkedIn, custom fields, etc.
+            dynamicData: otherData,
             status: 'New',
             submittedAt: new Date()
         };
 
         const result = await db.collection('training_applications').insertOne(application);
 
-        // Send Email
-        await sendTrainingApplicationEmail(application, trainingName);
+        // Fetch training to get custom email config
+        let training = null;
+        if (trainingId) {
+            training = await db.collection('trainings').findOne({ _id: new ObjectId(trainingId) });
+        } else {
+            // Fallback lookup by name if ID not sent (legacy support)
+            training = await db.collection('trainings').findOne({ name: trainingName });
+        }
+
+        if (training) {
+            await sendCustomTrainingEmail(application, training);
+        } else {
+            // Fallback to generic if training not found (shouldn't happen often)
+            await sendTrainingApplicationEmail(application, trainingName);
+        }
+
+        // Send Admin Notification (Reuse existing logic or copy here)
+        const adminHtml = `
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <h2 style="color: #6366f1;">New Training Application 🚀</h2>
+                <div style="background: #fff; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                    <p><strong>Training:</strong> ${trainingName}</p>
+                    <p><strong>Applicant:</strong> ${applicantName}</p>
+                    <p><strong>Email:</strong> ${email}</p>
+                    ${training && training.timing ? `<p><strong>Timing:</strong> ${training.timing}</p>` : ''}
+                    
+                    <h4 style="border-bottom: 2px solid #6366f1; padding-bottom: 5px; margin-top: 20px;">Submission Details:</h4>
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                        ${Object.entries(otherData || {}).map(([key, value]) => `
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold; width: 40%;">${key}</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">${value}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                </div>
+                <p style="margin-top: 20px; font-size: 12px; color: #64748b;">Sent via NexByte Admin System</p>
+            </div>
+        </body>
+        </html>
+        `;
+        await sendEmail(process.env.BREVO_SENDER_EMAIL || process.env.SMTP_EMAIL, `New Applicant: ${trainingName}`, adminHtml);
+
 
         res.status(201).json({ success: true, message: 'Application submitted', id: result.insertedId });
     } catch (error) {

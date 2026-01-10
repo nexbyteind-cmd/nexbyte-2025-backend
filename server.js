@@ -1020,6 +1020,92 @@ async function sendContactWelcomeEmail(contact) {
     }
 }
 
+function getTrainingEmailTemplate(name, trainingName) {
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); padding: 30px; text-align: center; border-radius: 12px 12px 0 0; }
+            .header h1 { color: white; margin: 0; font-size: 24px; }
+            .content { background: #ffffff; padding: 30px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; }
+            .greeting { font-size: 18px; color: #1e293b; margin-bottom: 20px; }
+            .message { color: #475569; margin-bottom: 25px; }
+            .details-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px; }
+            .button { display: inline-block; padding: 12px 24px; background-color: #6366f1; color: white !important; text-decoration: none; border-radius: 6px; font-weight: 600; margin-top: 15px; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>Registration Confirmed! 🎓</h1>
+        </div>
+        <div class="content">
+            <h2 class="greeting">Hello ${name},</h2>
+            <p class="message">Thank you for registering for <strong>${trainingName}</strong> at NexByte! We are excited to have you on board to upgrade your skills.</p>
+            <div class="details-box">
+                <p><strong>Training:</strong> ${trainingName}</p>
+                <p><strong>Mode:</strong> Online / Hybrid</p>
+                <p><strong>Status:</strong> Registration Successful</p>
+            </div>
+            <p class="message">Our team will reach out to you shortly with the schedule and joining details.</p>
+            <a href="https://www.nexbyteind.com" class="button">Visit Dashboard</a>
+        </div>
+        <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} NexByte. All rights reserved.</p>
+            <p>If you have any questions, reply to this email.</p>
+        </div>
+    </body>
+    </html>
+    `;
+}
+
+async function sendTrainingApplicationEmail(application, trainingName) {
+    const email = application.email;
+    if (email) {
+        const adminHtml = `
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <h2 style="color: #6366f1;">New Training Application 🚀</h2>
+                <div style="background: #fff; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                    <p><strong>Training:</strong> ${trainingName}</p>
+                    <p><strong>Applicant:</strong> ${application.applicantName}</p>
+                    <p><strong>Email:</strong> ${application.email}</p>
+                    
+                    <h4 style="border-bottom: 2px solid #6366f1; padding-bottom: 5px; margin-top: 20px;">Submission Details:</h4>
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                        ${Object.entries(application.dynamicData || {}).map(([key, value]) => `
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold; width: 40%;">${key}</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">${value}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                </div>
+                <p style="margin-top: 20px; font-size: 12px; color: #64748b;">Sent via NexByte Admin System</p>
+            </div>
+        </body>
+        </html>
+        `;
+
+        // Send User Confirmation
+        const userHtml = getTrainingEmailTemplate(application.applicantName || "Learner", trainingName);
+        await sendEmail(email, `Registration Confirmed: ${trainingName} 🎓`, userHtml);
+
+        // Send Admin Notification
+        await sendEmail(process.env.BREVO_SENDER_EMAIL, `New Applicant: ${trainingName}`, adminHtml);
+    }
+}
+
+
+
+
+
+
+
 
 // --- RESEND EMAIL ENDPOINTS ---
 
@@ -1149,7 +1235,7 @@ app.get('/api/marketing-applications', async (req, res) => {
 // --- DELETE ENDPOINTS FOR ADMIN PANEL ---
 
 const createDeleteEndpoint = (collectionName, routeName) => {
-    app.delete(`/api/${routeName}/:id`, async (req, res) => {
+    app.delete(`/ api / ${routeName}/:id`, async (req, res) => {
         try {
             if (!db) return res.status(500).json({ success: false, message: 'Database error' });
             const { id } = req.params;
@@ -1311,6 +1397,114 @@ app.put('/api/testimonials/:id/status', async (req, res) => {
 
 app.get('/', (req, res) => {
     res.send('Backend is running');
+});
+
+// --- TRAININGS ---
+
+app.post('/api/trainings', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const training = {
+            ...req.body,
+            createdAt: new Date(),
+            status: req.body.status || 'Active'
+        };
+        const result = await db.collection('trainings').insertOne(training);
+        res.status(201).json({ success: true, message: 'Training created', id: result.insertedId });
+    } catch (error) {
+        console.error('Error creating training:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.get('/api/trainings', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const query = {};
+        if (req.query.status) query.status = req.query.status;
+        if (req.query.category) query.category = req.query.category;
+
+        const trainings = await db.collection('trainings').find(query).sort({ createdAt: -1 }).toArray();
+        res.status(200).json({ success: true, data: trainings });
+    } catch (error) {
+        console.error('Error fetching trainings:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.put('/api/trainings/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { name, category, topics, duration, mode, description, syllabusLink, status, formFields, startDate, endDate, applyBy } = req.body;
+
+        await db.collection('trainings').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { name, category, topics, duration, mode, description, syllabusLink, status, formFields, startDate, endDate, applyBy } }
+        );
+        res.status(200).json({ success: true, message: 'Training updated successfully' });
+    } catch (error) {
+        console.error('Error updating training:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.delete('/api/trainings/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        await db.collection('trainings').deleteOne({ _id: new ObjectId(id) });
+        res.status(200).json({ success: true, message: 'Training deleted' });
+    } catch (error) {
+        console.error('Error deleting training:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// --- TRAINING APPLICATIONS ---
+
+app.post('/api/apply-training', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        // Destructure to separate core fields from dynamic data if needed, or just store everything
+        // Storing everything in `dynamicData` except key fields for easier indexing
+        const { trainingName, applicantName, email, ...otherData } = req.body;
+
+        if (!applicantName || !email || !trainingName) {
+            return res.status(400).json({ success: false, message: "Missing required fields" });
+        }
+
+        const application = {
+            trainingName,
+            applicantName,
+            email,
+            dynamicData: otherData, // Stores LinkedIn, custom fields, etc.
+            status: 'New',
+            submittedAt: new Date()
+        };
+
+        const result = await db.collection('training_applications').insertOne(application);
+
+        // Send Email
+        await sendTrainingApplicationEmail(application, trainingName);
+
+        res.status(201).json({ success: true, message: 'Application submitted', id: result.insertedId });
+    } catch (error) {
+        console.error('Error submitting training application:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.get('/api/training-applications', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const applications = await db.collection('training_applications').find({}).sort({ submittedAt: -1 }).toArray();
+        res.status(200).json({ success: true, data: applications });
+    } catch (error) {
+        console.error('Error fetching training applications:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
 });
 
 // Export the Express API for Vercel

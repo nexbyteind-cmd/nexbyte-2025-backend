@@ -1686,16 +1686,62 @@ app.post('/api/social-posts', async (req, res) => {
     }
 });
 
-// Get All Social Posts (Public)
+// Get Public Social Posts (Filters out hidden)
 app.get('/api/social-posts', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
 
-        // Sort by newest first
-        const posts = await db.collection('social_posts').find({}).sort({ createdAt: -1 }).toArray();
+        const sortOption = req.query.sort === 'popular'
+            ? { likes: -1, shares: -1, createdAt: -1 }
+            : { createdAt: -1 };
+
+        // Sort by option, exclude hidden posts
+        const posts = await db.collection('social_posts')
+            .find({ isHidden: { $ne: true } })
+            .sort(sortOption)
+            .toArray();
         res.status(200).json({ success: true, data: posts });
     } catch (error) {
         console.error('Error fetching social posts:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Admin Get All Social Posts (Includes hidden)
+app.get('/api/admin/social-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const sortOption = req.query.sort === 'popular'
+            ? { likes: -1, shares: -1, createdAt: -1 }
+            : { createdAt: -1 };
+
+        const posts = await db.collection('social_posts')
+            .find({})
+            .sort(sortOption)
+            .toArray();
+        res.status(200).json({ success: true, data: posts });
+    } catch (error) {
+        console.error('Error fetching admin social posts:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Get Single Social Post
+app.get('/api/social-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+
+        const post = await db.collection('social_posts').findOne({ _id: new ObjectId(id) });
+
+        if (!post) {
+            return res.status(404).json({ success: false, message: 'Post not found' });
+        }
+
+        res.status(200).json({ success: true, data: post });
+    } catch (error) {
+        console.error('Error fetching social post:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
@@ -1719,6 +1765,12 @@ app.put('/api/social-posts/:id', async (req, res) => {
         } else if (type === 'edit') {
             // payload is the full update object
             updateOp = { $set: { ...payload, updatedAt: new Date() } };
+        } else if (type === 'visibility') {
+            // payload: { isHidden: boolean }
+            updateOp = { $set: { isHidden: payload.isHidden } };
+        } else if (type === 'comments-toggle') {
+            // payload: { commentsHidden: boolean }
+            updateOp = { $set: { commentsHidden: payload.commentsHidden } };
         } else {
             return res.status(400).json({ success: false, message: 'Invalid update type' });
         }

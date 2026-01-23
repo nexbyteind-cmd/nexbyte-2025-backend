@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { MongoClient, ObjectId } = require('mongodb');
+const ImageKit = require("imagekit");
 require('dotenv').config();
 
 const app = express();
@@ -20,6 +21,13 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
+
+// ImageKit Configuration
+const imagekit = new ImageKit({
+    publicKey: process.env.IMAGEKIT_PUBLIC_KEY,
+    privateKey: process.env.IMAGEKIT_PRIVATE_KEY,
+    urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT
+});
 
 // MongoDB Connection
 // MongoDB Connection
@@ -1644,6 +1652,108 @@ app.get('/api/training-applications', async (req, res) => {
         res.status(200).json({ success: true, data: applications });
     } catch (error) {
         console.error('Error fetching training applications:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// --- SOCIAL POSTS (LinkedIn Style) ---
+
+// ImageKit Authentication Endpoint
+app.get('/api/imagekit-auth', function (req, res) {
+    var result = imagekit.getAuthenticationParameters();
+    res.send(result);
+});
+
+// Create Social Post
+app.post('/api/social-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const postData = {
+            ...req.body,
+            likes: 0,
+            shares: 0,
+            comments: [],
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+
+        const result = await db.collection('social_posts').insertOne(postData);
+        res.status(201).json({ success: true, message: 'Post created', id: result.insertedId });
+    } catch (error) {
+        console.error('Error creating social post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Get All Social Posts (Public)
+app.get('/api/social-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        // Sort by newest first
+        const posts = await db.collection('social_posts').find({}).sort({ createdAt: -1 }).toArray();
+        res.status(200).json({ success: true, data: posts });
+    } catch (error) {
+        console.error('Error fetching social posts:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Update Social Post (Likes, Shares, Comments, or Edit Content)
+app.put('/api/social-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { type, payload } = req.body; // type: 'like', 'share', 'comment', 'edit'
+
+        let updateOp = {};
+
+        if (type === 'like') {
+            updateOp = { $inc: { likes: 1 } };
+        } else if (type === 'share') {
+            updateOp = { $inc: { shares: 1 } };
+        } else if (type === 'comment') {
+            // payload should be { user: "Name", text: "comment", date: ... }
+            updateOp = { $push: { comments: payload } };
+        } else if (type === 'edit') {
+            // payload is the full update object
+            updateOp = { $set: { ...payload, updatedAt: new Date() } };
+        } else {
+            return res.status(400).json({ success: false, message: 'Invalid update type' });
+        }
+
+        const result = await db.collection('social_posts').updateOne(
+            { _id: new ObjectId(id) },
+            updateOp
+        );
+
+        if (result.matchedCount === 0) {
+            res.status(404).json({ success: false, message: 'Post not found' });
+        } else {
+            res.status(200).json({ success: true, message: 'Post updated' });
+        }
+    } catch (error) {
+        console.error('Error updating post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Delete Social Post
+app.delete('/api/social-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+
+        const result = await db.collection('social_posts').deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount === 1) {
+            res.status(200).json({ success: true, message: 'Post deleted' });
+        } else {
+            res.status(404).json({ success: false, message: 'Post not found' });
+        }
+    } catch (error) {
+        console.error('Error deleting post:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });

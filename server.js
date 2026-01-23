@@ -1686,6 +1686,59 @@ app.post('/api/social-posts', async (req, res) => {
     }
 });
 
+// --- CATEGORIES ---
+app.post('/api/categories', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ success: false, message: 'Category name is required' });
+
+        // Check if category exists
+        const existing = await db.collection('categories').findOne({ name });
+        if (existing) {
+            return res.status(400).json({ success: false, message: 'Category already exists' });
+        }
+
+        const category = {
+            name,
+            createdAt: new Date()
+        };
+        const result = await db.collection('categories').insertOne(category);
+        res.status(201).json({ success: true, message: 'Category created', id: result.insertedId });
+    } catch (error) {
+        console.error('Error creating category:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.get('/api/categories', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const categories = await db.collection('categories').find({}).sort({ name: 1 }).toArray();
+        res.status(200).json({ success: true, data: categories });
+    } catch (error) {
+        console.error('Error fetching categories:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.delete('/api/categories/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const result = await db.collection('categories').deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 1) {
+            res.status(200).json({ success: true, message: 'Category deleted' });
+        } else {
+            res.status(404).json({ success: false, message: 'Category not found' });
+        }
+    } catch (error) {
+        console.error('Error deleting category:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+
 // Get Public Social Posts (Filters out hidden)
 app.get('/api/social-posts', async (req, res) => {
     try {
@@ -1695,9 +1748,16 @@ app.get('/api/social-posts', async (req, res) => {
             ? { likes: -1, shares: -1, createdAt: -1 }
             : { createdAt: -1 };
 
+        const query = { isHidden: { $ne: true } };
+        
+        // Add Category Filter
+        if (req.query.category && req.query.category !== 'All') {
+            query.category = req.query.category;
+        }
+
         // Sort by option, exclude hidden posts
         const posts = await db.collection('social_posts')
-            .find({ isHidden: { $ne: true } })
+            .find(query)
             .sort(sortOption)
             .toArray();
         res.status(200).json({ success: true, data: posts });

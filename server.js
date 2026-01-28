@@ -1701,6 +1701,7 @@ app.post('/api/categories', async (req, res) => {
 
         const category = {
             name,
+            isHidden: false,
             createdAt: new Date()
         };
         const result = await db.collection('categories').insertOne(category);
@@ -1714,7 +1715,14 @@ app.post('/api/categories', async (req, res) => {
 app.get('/api/categories', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
-        const categories = await db.collection('categories').find({}).sort({ name: 1 }).toArray();
+
+        const query = {};
+        // If not explicitly asking for hidden categories (e.g. Admin), filter them out.
+        if (req.query.includeHidden !== 'true') {
+            query.isHidden = { $ne: true };
+        }
+
+        const categories = await db.collection('categories').find(query).sort({ name: 1 }).toArray();
         res.status(200).json({ success: true, data: categories });
     } catch (error) {
         console.error('Error fetching categories:', error);
@@ -1738,6 +1746,28 @@ app.delete('/api/categories/:id', async (req, res) => {
     }
 });
 
+app.put('/api/categories/:id/visibility', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { isHidden } = req.body;
+
+        const result = await db.collection('categories').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { isHidden: isHidden } }
+        );
+
+        if (result.modifiedCount === 1) {
+            res.status(200).json({ success: true, message: 'Category visibility updated' });
+        } else {
+            res.status(404).json({ success: false, message: 'Category not found or unchanged' });
+        }
+    } catch (error) {
+        console.error('Error updating category visibility:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 
 // Get Public Social Posts (Filters out hidden)
 app.get('/api/social-posts', async (req, res) => {
@@ -1746,13 +1776,48 @@ app.get('/api/social-posts', async (req, res) => {
 
         const sortOption = req.query.sort === 'popular'
             ? { likes: -1, shares: -1, createdAt: -1 }
-            : { createdAt: -1 };
+            : req.query.sort === 'general'
+                ? { createdAt: 1 } // Oldest first
+                : { createdAt: -1 }; // Latest (Newest first) - Default
 
         const query = { isHidden: { $ne: true } };
-        
-        // Add Category Filter
+
+        // 1. Get Hidden Categories
+        const hiddenCategories = await db.collection('categories').find({ isHidden: true }).toArray();
+        const hiddenCategoryNames = hiddenCategories.map(c => c.name);
+
+        if (hiddenCategoryNames.length > 0) {
+            // Exclude posts that belong to hidden categories
+            query.category = { $nin: hiddenCategoryNames };
+        }
+
+        // 2. Add Category Filter (Specific Category selected by user)
         if (req.query.category && req.query.category !== 'All') {
+            // If the selected category is itself hidden, we should technically return nothing or let the exclusion handle it.
+            // But if user manually requests a category, we overwrite the $nin if it conflicts? 
+            // Better to keep the restriction: even if asked, don't show if hidden.
+            // Using $and or implicit AND.
+            // If query.category is already set by $nin, we need to be careful.
+            // MongoDB allows implicit specific value match overriding, but to be safe with $nin AND specific match:
+            if (hiddenCategoryNames.includes(req.query.category)) {
+                // User asked for a hidden category explicitly -> return empty immediately
+                return res.status(200).json({ success: true, data: [] });
+            }
             query.category = req.query.category;
+        }
+
+        // 3. Date Filter
+        if (req.query.date) {
+            const filterDate = new Date(req.query.date);
+            if (!isNaN(filterDate)) {
+                const nextDay = new Date(filterDate);
+                nextDay.setDate(nextDay.getDate() + 1);
+
+                query.createdAt = {
+                    $gte: filterDate,
+                    $lt: nextDay
+                };
+            }
         }
 
         // Sort by option, exclude hidden posts

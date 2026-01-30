@@ -1936,7 +1936,261 @@ app.delete('/api/social-posts/:id', async (req, res) => {
 });
 
 // Export the Express API for Vercel
+// --- AI POSTS ---
+
+// Create AI Post
+app.post('/api/ai-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const postData = {
+            ...req.body,
+            likes: 0,
+            shares: 0,
+            comments: [],
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+
+        const result = await db.collection('ai_posts').insertOne(postData);
+        res.status(201).json({ success: true, message: 'Post created', id: result.insertedId });
+    } catch (error) {
+        console.error('Error creating ai post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// --- AI CATEGORIES ---
+app.post('/api/ai-categories', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ success: false, message: 'Category name is required' });
+
+        const existing = await db.collection('ai_categories').findOne({ name });
+        if (existing) {
+            return res.status(400).json({ success: false, message: 'Category already exists' });
+        }
+
+        const category = {
+            name,
+            isHidden: false,
+            createdAt: new Date()
+        };
+        const result = await db.collection('ai_categories').insertOne(category);
+        res.status(201).json({ success: true, message: 'Category created', id: result.insertedId });
+    } catch (error) {
+        console.error('Error creating ai category:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.get('/api/ai-categories', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const query = {};
+        if (req.query.includeHidden !== 'true') {
+            query.isHidden = { $ne: true };
+        }
+
+        const categories = await db.collection('ai_categories').find(query).sort({ name: 1 }).toArray();
+        res.status(200).json({ success: true, data: categories });
+    } catch (error) {
+        console.error('Error fetching ai categories:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.delete('/api/ai-categories/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const result = await db.collection('ai_categories').deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 1) {
+            res.status(200).json({ success: true, message: 'Category deleted' });
+        } else {
+            res.status(404).json({ success: false, message: 'Category not found' });
+        }
+    } catch (error) {
+        console.error('Error deleting ai category:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.put('/api/ai-categories/:id/visibility', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { isHidden } = req.body;
+
+        const result = await db.collection('ai_categories').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { isHidden: isHidden } }
+        );
+
+        if (result.modifiedCount === 1) {
+            res.status(200).json({ success: true, message: 'Category visibility updated' });
+        } else {
+            res.status(404).json({ success: false, message: 'Category not found or unchanged' });
+        }
+    } catch (error) {
+        console.error('Error updating ai category visibility:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Get Public AI Posts (Filters out hidden)
+app.get('/api/ai-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const sortOption = req.query.sort === 'popular'
+            ? { likes: -1, shares: -1, createdAt: -1 }
+            : req.query.sort === 'general'
+                ? { createdAt: 1 }
+                : { createdAt: -1 };
+
+        const query = { isHidden: { $ne: true } };
+
+        const hiddenCategories = await db.collection('ai_categories').find({ isHidden: true }).toArray();
+        const hiddenCategoryNames = hiddenCategories.map(c => c.name);
+
+        if (hiddenCategoryNames.length > 0) {
+            query.category = { $nin: hiddenCategoryNames };
+        }
+
+        if (req.query.category && req.query.category !== 'All') {
+            if (hiddenCategoryNames.includes(req.query.category)) {
+                return res.status(200).json({ success: true, data: [] });
+            }
+            query.category = req.query.category;
+        }
+
+        if (req.query.date) {
+            const filterDate = new Date(req.query.date);
+            if (!isNaN(filterDate)) {
+                const nextDay = new Date(filterDate);
+                nextDay.setDate(nextDay.getDate() + 1);
+                query.createdAt = {
+                    $gte: filterDate,
+                    $lt: nextDay
+                };
+            }
+        }
+
+        const posts = await db.collection('ai_posts')
+            .find(query)
+            .sort(sortOption)
+            .toArray();
+        res.status(200).json({ success: true, data: posts });
+    } catch (error) {
+        console.error('Error fetching ai posts:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Admin Get All AI Posts (Includes hidden)
+app.get('/api/admin/ai-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const sortOption = req.query.sort === 'popular'
+            ? { likes: -1, shares: -1, createdAt: -1 }
+            : { createdAt: -1 };
+
+        const posts = await db.collection('ai_posts')
+            .find({})
+            .sort(sortOption)
+            .toArray();
+        res.status(200).json({ success: true, data: posts });
+    } catch (error) {
+        console.error('Error fetching admin ai posts:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Get Single AI Post
+app.get('/api/ai-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+
+        const post = await db.collection('ai_posts').findOne({ _id: new ObjectId(id) });
+
+        if (!post) {
+            return res.status(404).json({ success: false, message: 'Post not found' });
+        }
+
+        res.status(200).json({ success: true, data: post });
+    } catch (error) {
+        console.error('Error fetching ai post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Update AI Post
+app.put('/api/ai-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { type, payload } = req.body;
+
+        let updateOp = {};
+
+        if (type === 'like') {
+            updateOp = { $inc: { likes: 1 } };
+        } else if (type === 'share') {
+            updateOp = { $inc: { shares: 1 } };
+        } else if (type === 'comment') {
+            updateOp = { $push: { comments: payload } };
+        } else if (type === 'edit') {
+            updateOp = { $set: { ...payload, updatedAt: new Date() } };
+        } else if (type === 'visibility') {
+            updateOp = { $set: { isHidden: payload.isHidden } };
+        } else if (type === 'comments-toggle') {
+            updateOp = { $set: { commentsHidden: payload.commentsHidden } };
+        } else {
+            return res.status(400).json({ success: false, message: 'Invalid update type' });
+        }
+
+        const result = await db.collection('ai_posts').updateOne(
+            { _id: new ObjectId(id) },
+            updateOp
+        );
+
+        if (result.matchedCount === 0) {
+            res.status(404).json({ success: false, message: 'Post not found' });
+        } else {
+            res.status(200).json({ success: true, message: 'Post updated' });
+        }
+    } catch (error) {
+        console.error('Error updating ai post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Delete AI Post
+app.delete('/api/ai-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+
+        const result = await db.collection('ai_posts').deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount === 1) {
+            res.status(200).json({ success: true, message: 'Post deleted' });
+        } else {
+            res.status(404).json({ success: false, message: 'Post not found' });
+        }
+    } catch (error) {
+        console.error('Error deleting ai post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 // --- 404 Debug Handler ---
+
 app.use((req, res, next) => {
     console.log(`[404] Route not found: ${req.method} ${req.originalUrl}`);
     res.status(404).json({ success: false, message: `Route not found: ${req.method} ${req.originalUrl}` });

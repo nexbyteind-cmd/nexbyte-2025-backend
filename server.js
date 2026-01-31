@@ -799,6 +799,12 @@ app.post('/api/programs', async (req, res) => {
     }
 });
 
+
+
+// --- NEWS & PRIVATE ADS SYSTEM (Linked from news.js) ---
+require('./news')(app, connectDB);
+
+
 app.get('/api/programs', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });

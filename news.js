@@ -137,11 +137,18 @@ module.exports = function (app, connectDB) {
     router.post('/ads', async (req, res) => {
         try {
             const db = await connectDB();
+
+            // Sanitize contactDetails to ensure it's an object
+            let contactDetails = req.body.contactDetails;
+            if (Array.isArray(contactDetails) || typeof contactDetails !== 'object') {
+                contactDetails = {};
+            }
+
             const adData = {
                 ...req.body,
+                contactDetails, // explicit override
                 postedDate: new Date(),
                 isVisible: true, // Default to visible
-                // Ensure slug is unique is handled by logic or index (we check manually for simplicity)
             };
 
             // Check slug uniqueness
@@ -163,7 +170,14 @@ module.exports = function (app, connectDB) {
         try {
             const db = await connectDB();
             const { id } = req.params;
-            const updateData = { ...req.body, updatedAt: new Date() };
+
+            // Sanitize contactDetails
+            let contactDetails = req.body.contactDetails;
+            if (Array.isArray(contactDetails) || typeof contactDetails !== 'object') {
+                contactDetails = {};
+            }
+
+            const updateData = { ...req.body, contactDetails, updatedAt: new Date() };
             delete updateData._id; // Prevent updating _id
 
             // Check slug uniqueness if slug is changing

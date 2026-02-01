@@ -144,9 +144,16 @@ module.exports = function (app, connectDB) {
                 contactDetails = {};
             }
 
+            // Sanitize customSections
+            let customSections = req.body.customSections;
+            if (!Array.isArray(customSections)) {
+                customSections = [];
+            }
+
             const adData = {
                 ...req.body,
                 contactDetails, // explicit override
+                customSections, // explicit override
                 postedDate: new Date(),
                 isVisible: true, // Default to visible
             };
@@ -177,7 +184,13 @@ module.exports = function (app, connectDB) {
                 contactDetails = {};
             }
 
-            const updateData = { ...req.body, contactDetails, updatedAt: new Date() };
+            // Sanitize customSections
+            let customSections = req.body.customSections;
+            if (!Array.isArray(customSections)) {
+                customSections = [];
+            }
+
+            const updateData = { ...req.body, contactDetails, customSections, updatedAt: new Date() };
             delete updateData._id; // Prevent updating _id
 
             // Check slug uniqueness if slug is changing

@@ -2197,6 +2197,128 @@ app.delete('/api/ai-posts/:id', async (req, res) => {
 
 // --- 404 Debug Handler ---
 
+// --- TOOLS: NOTES ---
+app.get('/api/notes', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const notes = await db.collection('notes').find({}).sort({ createdAt: -1 }).toArray();
+        res.status(200).json({ success: true, data: notes });
+    } catch (error) {
+        console.error('Error fetching notes:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.post('/api/notes', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const note = {
+            title: req.body.title,
+            description: req.body.description,
+            reason: req.body.reason,
+            important: req.body.important || false,
+            links: req.body.links || [], // Array of { name, url } or just strings
+            createdAt: new Date()
+        };
+        const result = await db.collection('notes').insertOne(note);
+        res.status(201).json({ success: true, message: 'Note created', id: result.insertedId });
+    } catch (error) {
+        console.error('Error creating note:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.put('/api/notes/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const updateData = { ...req.body };
+        delete updateData._id; // Prevent updating _id
+
+        const result = await db.collection('notes').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: updateData }
+        );
+        res.status(200).json({ success: true, message: 'Note updated' });
+    } catch (error) {
+        console.error('Error updating note:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.delete('/api/notes/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        await db.collection('notes').deleteOne({ _id: new ObjectId(id) });
+        res.status(200).json({ success: true, message: 'Note deleted' });
+    } catch (error) {
+        console.error('Error deleting note:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// --- TOOLS: TODOS ---
+app.get('/api/todos', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const todos = await db.collection('todos').find({}).toArray();
+        res.status(200).json({ success: true, data: todos });
+    } catch (error) {
+        console.error('Error fetching todos:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.post('/api/todos', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const todo = {
+            title: req.body.title,
+            description: req.body.description,
+            priority: req.body.priority || 'Medium',
+            status: req.body.status || 'Todo',
+            createdAt: new Date()
+        };
+        const result = await db.collection('todos').insertOne(todo);
+        res.status(201).json({ success: true, message: 'Todo created', id: result.insertedId });
+    } catch (error) {
+        console.error('Error creating todo:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.put('/api/todos/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const updateData = { ...req.body };
+        delete updateData._id;
+
+        const result = await db.collection('todos').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: updateData }
+        );
+        res.status(200).json({ success: true, message: 'Todo updated' });
+    } catch (error) {
+        console.error('Error updating todo:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.delete('/api/todos/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        await db.collection('todos').deleteOne({ _id: new ObjectId(id) });
+        res.status(200).json({ success: true, message: 'Todo deleted' });
+    } catch (error) {
+        console.error('Error deleting todo:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+
 app.use((req, res, next) => {
     console.log(`[404] Route not found: ${req.method} ${req.originalUrl}`);
     res.status(404).json({ success: false, message: `Route not found: ${req.method} ${req.originalUrl}` });

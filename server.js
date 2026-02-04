@@ -229,7 +229,26 @@ app.put('/api/hackathons/:id', async (req, res) => {
 
 
 
-// --- TECH POSTS ---
+// --- WEBINARS ROUTES ---
+require('./webinars')(app, connectDB);
+
+// --- NEW ROUTE: Get Unique Subcategories ---
+app.get('/api/tech-posts/subcategories', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { category } = req.query;
+        const match = category ? { category: category } : {};
+
+        const subcategories = await db.collection('tech_posts').distinct("subcategory", match);
+        const filtered = subcategories.filter(s => s && s.trim() !== "");
+
+        res.status(200).json({ success: true, data: filtered });
+    } catch (error) {
+        console.error('Error fetching subcategories:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 app.post('/api/tech-posts', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
@@ -241,7 +260,8 @@ app.post('/api/tech-posts', async (req, res) => {
             shares: 0,
             comments: [],
             isHidden: false,
-            commentsHidden: false
+            commentsHidden: false,
+            subcategory: req.body.subcategory || ""
         };
 
         const result = await db.collection('tech_posts').insertOne(newPost);
@@ -256,11 +276,15 @@ app.get('/api/tech-posts', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
 
-        const { sort, category, date } = req.query;
+        const { sort, category, date, subcategory } = req.query;
         let query = { isHidden: { $ne: true } }; // Default: show only visible
 
         if (category && category !== 'All') {
             query.category = category;
+        }
+
+        if (subcategory) {
+            query.subcategory = subcategory;
         }
 
         if (date) {
@@ -380,6 +404,83 @@ app.delete('/api/tech-posts/:id', async (req, res) => {
         res.status(200).json({ success: true, message: 'Post deleted' });
     } catch (error) {
         console.error('Error deleting tech post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+
+// --- TECH SUBCATEGORIES ---
+
+app.get('/api/tech-subcategories', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { category, includeHidden } = req.query; // category is the Parent Category (e.g., "Python")
+
+        const query = {};
+        if (category) query.parentCategory = category;
+        if (includeHidden !== 'true') query.isHidden = { $ne: true };
+
+        const subcategories = await db.collection('tech_subcategories').find(query).toArray();
+        res.status(200).json({ success: true, data: subcategories });
+    } catch (error) {
+        console.error('Error fetching tech subcategories:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.post('/api/tech-subcategories', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { name, parentCategory } = req.body;
+
+        if (!name || !parentCategory) {
+            return res.status(400).json({ success: false, message: 'Name and Parent Category are required' });
+        }
+
+        const newSub = {
+            name,
+            parentCategory,
+            isHidden: false,
+            createdAt: new Date()
+        };
+
+        const result = await db.collection('tech_subcategories').insertOne(newSub);
+        res.status(201).json({ success: true, data: { ...newSub, _id: result.insertedId }, message: 'Subcategory created' });
+    } catch (error) {
+        console.error('Error creating tech subcategory:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.delete('/api/tech-subcategories/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const result = await db.collection('tech_subcategories').deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount === 0) return res.status(404).json({ success: false, message: 'Subcategory not found' });
+        res.status(200).json({ success: true, message: 'Subcategory deleted' });
+    } catch (error) {
+        console.error('Error deleting tech subcategory:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.put('/api/tech-subcategories/:id/visibility', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { isHidden } = req.body;
+
+        const result = await db.collection('tech_subcategories').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { isHidden } }
+        );
+
+        if (result.matchedCount === 0) return res.status(404).json({ success: false, message: 'Subcategory not found' });
+        res.status(200).json({ success: true, message: 'Visibility updated' });
+    } catch (error) {
+        console.error('Error updating subcategory visibility:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });

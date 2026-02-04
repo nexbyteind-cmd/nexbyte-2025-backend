@@ -228,6 +228,163 @@ app.put('/api/hackathons/:id', async (req, res) => {
 
 
 
+
+// --- TECH POSTS ---
+app.post('/api/tech-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const newPost = {
+            ...req.body,
+            createdAt: new Date(),
+            likes: 0,
+            shares: 0,
+            comments: [],
+            isHidden: false,
+            commentsHidden: false
+        };
+
+        const result = await db.collection('tech_posts').insertOne(newPost);
+        res.status(201).json({ success: true, message: 'Tech Post created', data: { ...newPost, _id: result.insertedId } });
+    } catch (error) {
+        console.error('Error creating tech post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.get('/api/tech-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const { sort, category, date } = req.query;
+        let query = { isHidden: { $ne: true } }; // Default: show only visible
+
+        if (category && category !== 'All') {
+            query.category = category;
+        }
+
+        if (date) {
+            const startOfDay = new Date(date);
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(date);
+            endOfDay.setHours(23, 59, 59, 999);
+            query.createdAt = { $gte: startOfDay, $lte: endOfDay };
+        }
+
+        let sortOption = { createdAt: -1 }; // Default latest
+        if (sort === 'popular') {
+            sortOption = { likes: -1 };
+        }
+
+        const posts = await db.collection('tech_posts').find(query).sort(sortOption).toArray();
+        res.status(200).json({ success: true, data: posts });
+    } catch (error) {
+        console.error('Error fetching tech posts:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Admin Route to get ALL tech posts (including hidden)
+app.get('/api/admin/tech-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const { sort, category } = req.query;
+        let query = {};
+
+        if (category && category !== 'All') {
+            query.category = category;
+        }
+
+        let sortOption = { createdAt: -1 };
+        if (sort === 'popular') {
+            sortOption = { likes: -1 };
+        }
+
+        const posts = await db.collection('tech_posts').find(query).sort(sortOption).toArray();
+        res.status(200).json({ success: true, data: posts });
+    } catch (error) {
+        console.error('Error fetching admin tech posts:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+
+// Get Single Tech Post
+app.get('/api/tech-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const post = await db.collection('tech_posts').findOne({ _id: new ObjectId(id) });
+
+        if (!post) {
+            return res.status(404).json({ success: false, message: 'Post not found' });
+        }
+
+        res.status(200).json({ success: true, data: post });
+    } catch (error) {
+        console.error('Error fetching tech post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.put('/api/tech-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { type, payload } = req.body;
+
+        let updateData = {};
+
+        if (type === 'like') {
+            updateData = { $inc: { likes: 1 } };
+        } else if (type === 'share') {
+            updateData = { $inc: { shares: 1 } };
+        } else if (type === 'comment') {
+            updateData = { $push: { comments: payload } };
+        } else if (type === 'visibility') {
+            updateData = { $set: { isHidden: payload.isHidden } };
+        } else if (type === 'comments-toggle') {
+            updateData = { $set: { commentsHidden: payload.commentsHidden } };
+        } else if (type === 'edit') {
+            updateData = { $set: payload };
+        }
+
+        const result = await db.collection('tech_posts').updateOne(
+            { _id: new ObjectId(id) },
+            updateData
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ success: false, message: 'Post not found' });
+        }
+
+        res.status(200).json({ success: true, message: 'Post updated' });
+    } catch (error) {
+        console.error('Error updating tech post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.delete('/api/tech-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+
+        const result = await db.collection('tech_posts').deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount === 0) {
+            return res.status(404).json({ success: false, message: 'Post not found' });
+        }
+
+        res.status(200).json({ success: true, message: 'Post deleted' });
+    } catch (error) {
+        console.error('Error deleting tech post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+
 // --- APPLICATIONS ---
 
 // --- EMAIL CONFIGURATION ---

@@ -4,6 +4,8 @@ const { MongoClient, ObjectId } = require('mongodb');
 const ImageKit = require("imagekit");
 require('dotenv').config();
 
+const nodemailer = require('nodemailer');
+
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -481,6 +483,75 @@ app.put('/api/tech-subcategories/:id/visibility', async (req, res) => {
         res.status(200).json({ success: true, message: 'Visibility updated' });
     } catch (error) {
         console.error('Error updating subcategory visibility:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+
+// --- EXCLUSIVE DATA (Google Reviews Marketing) ---
+
+app.post('/api/exclusive-data', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const entry = {
+            ...req.body,
+            submittedAt: new Date()
+        };
+        const result = await db.collection('exclusive_data').insertOne(entry);
+
+        // Send Email Notification
+        const mailOptions = {
+            from: process.env.SMTP_EMAIL,
+            to: process.env.SMTP_EMAIL, // Send to admin
+            subject: `New Google Reviews Lead: ${req.body.businessName}`,
+            html: `
+                <h2>New Exclusive Data Lead</h2>
+                <p><strong>Full Name:</strong> ${req.body.fullName}</p>
+                <p><strong>Business Name:</strong> ${req.body.businessName}</p>
+                <p><strong>WhatsApp:</strong> ${req.body.whatsappNumber}</p>
+                <p><strong>Email:</strong> ${req.body.email || 'N/A'}</p>
+                <p><strong>Location:</strong> ${req.body.location}</p>
+                <p><strong>Start Date:</strong> ${req.body.startDate}</p>
+                <p><strong>Maps Link:</strong> <a href="${req.body.mapsLink}">${req.body.mapsLink}</a></p>
+                <p><strong>Message:</strong> ${req.body.message || 'N/A'}</p>
+            `
+        };
+
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                console.error('Error sending email:', error);
+            } else {
+                console.log('Email sent: ' + info.response);
+            }
+        });
+
+        res.status(201).json({ success: true, message: 'Data saved', id: result.insertedId });
+    } catch (error) {
+        console.error('Error saving exclusive data:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.get('/api/exclusive-data', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const data = await db.collection('exclusive_data').find().sort({ submittedAt: -1 }).toArray();
+        res.status(200).json({ success: true, data: data });
+    } catch (error) {
+        console.error('Error fetching exclusive data:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.delete('/api/exclusive-data/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const result = await db.collection('exclusive_data').deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 1) res.status(200).json({ success: true, message: 'Deleted' });
+        else res.status(404).json({ success: false, message: 'Not Found' });
+    } catch (error) {
+        console.error('Error deleting exclusive data:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });

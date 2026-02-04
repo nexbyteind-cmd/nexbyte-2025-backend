@@ -234,6 +234,9 @@ app.put('/api/hackathons/:id', async (req, res) => {
 // --- WEBINARS ROUTES ---
 require('./webinars')(app, connectDB);
 
+// --- CAREER GUIDANCE ROUTES ---
+require('./career-guidance')(app, connectDB, sendEmail);
+
 // --- NEW ROUTE: Get Unique Subcategories ---
 app.get('/api/tech-posts/subcategories', async (req, res) => {
     try {
@@ -560,7 +563,7 @@ app.delete('/api/exclusive-data/:id', async (req, res) => {
 // --- APPLICATIONS ---
 
 // --- EMAIL CONFIGURATION ---
-const nodemailer = require('nodemailer');
+// const nodemailer = require('nodemailer'); // Already declared at top
 
 const transporter = nodemailer.createTransport({
     host: "smtp-relay.brevo.com",

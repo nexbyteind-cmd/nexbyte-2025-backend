@@ -201,7 +201,7 @@ module.exports = function (app, connectDB, sendEmail) {
     router.post('/enquiry', async (req, res) => {
         try {
             const db = await connectDB();
-            const { name, email, phone, status, role, technology, timeSlot, notes } = req.body;
+            const { name, email, phone, status, role, technology, timeSlot, notes, profileLink } = req.body;
 
             const newEnquiry = {
                 name,
@@ -212,6 +212,7 @@ module.exports = function (app, connectDB, sendEmail) {
                 technology,
                 timeSlot,
                 notes,
+                profileLink,
                 submittedAt: new Date()
             };
 

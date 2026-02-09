@@ -94,18 +94,20 @@ module.exports = function (app, connectDB) {
     router.get('/ads', async (req, res) => {
         try {
             const db = await connectDB();
-            const { category, featured, publicView } = req.query;
+            const { category, featured, includeHidden } = req.query;
             let query = {};
+
+            // Default: Filter out hidden ads (isVisible !== false)
+            // Only show hidden if includeHidden is 'true'
+            if (includeHidden !== 'true') {
+                query.isVisible = { $ne: false };
+            }
 
             if (category && category !== 'All') {
                 query.category = category;
             }
             if (featured === 'true') {
                 query.homepageVisible = true;
-            }
-            if (publicView === 'true') {
-                // Return ads where isVisible is true OR field is missing
-                query.isVisible = { $ne: false };
             }
 
             const ads = await db.collection('ads').find(query).sort({ postedDate: -1 }).toArray();
@@ -155,7 +157,7 @@ module.exports = function (app, connectDB) {
                 contactDetails, // explicit override
                 customSections, // explicit override
                 postedDate: new Date(),
-                isVisible: true, // Default to visible
+                isVisible: false, // Default to HIDDEN
             };
 
             // Check slug uniqueness
@@ -165,9 +167,29 @@ module.exports = function (app, connectDB) {
             }
 
             const result = await db.collection('ads').insertOne(adData);
-            res.status(201).json({ success: true, message: 'Ad created', id: result.insertedId });
+            res.status(201).json({ success: true, message: 'Ad created (Hidden by Default)', id: result.insertedId });
         } catch (error) {
             console.error('Error creating ad:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
+    // Toggle Ad Visibility
+    router.put('/ads/:id/visibility', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const { id } = req.params;
+            const { isVisible } = req.body;
+
+            const result = await db.collection('ads').updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { isVisible: isVisible } }
+            );
+
+            if (result.matchedCount === 0) return res.status(404).json({ success: false, message: 'Ad not found' });
+            res.status(200).json({ success: true, message: 'Ad visibility updated' });
+        } catch (error) {
+            console.error('Error updating ad visibility:', error);
             res.status(500).json({ success: false, message: 'Server error' });
         }
     });
@@ -190,7 +212,13 @@ module.exports = function (app, connectDB) {
                 customSections = [];
             }
 
-            const updateData = { ...req.body, contactDetails, customSections, updatedAt: new Date() };
+            const updateData = {
+                ...req.body,
+                contactDetails,
+                customSections,
+                updatedAt: new Date(),
+                isVisible: false // Force HIDDEN on update
+            };
             delete updateData._id; // Prevent updating _id
 
             // Check slug uniqueness if slug is changing
@@ -207,7 +235,7 @@ module.exports = function (app, connectDB) {
             );
 
             if (result.matchedCount === 0) return res.status(404).json({ success: false, message: 'Ad not found' });
-            res.status(200).json({ success: true, message: 'Ad updated' });
+            res.status(200).json({ success: true, message: 'Ad updated (Hidden by Default)' });
         } catch (error) {
             console.error('Error updating ad:', error);
             res.status(500).json({ success: false, message: 'Server error' });

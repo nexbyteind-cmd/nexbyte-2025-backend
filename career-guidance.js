@@ -10,10 +10,21 @@ module.exports = function (app, connectDB, sendEmail) {
     router.get('/technologies', async (req, res) => {
         try {
             const db = await connectDB();
+            const { includeHidden } = req.query;
+            const query = {};
+
+            if (includeHidden !== 'true') {
+                query.isVisible = true; // Only show explicitly visible pages
+            }
+
+            console.log("Fetching Career Techs with Query:", JSON.stringify(query));
+
             const technologies = await db.collection('career_technologies')
-                .find({})
+                .find(query)
                 .sort({ order: 1, name: 1 }) // specific order or alphabetical
                 .toArray();
+
+            console.log(`Found ${technologies.length} technologies.`);
             res.status(200).json({ success: true, data: technologies });
         } catch (error) {
             console.error('Error fetching career technologies:', error);
@@ -53,7 +64,8 @@ module.exports = function (app, connectDB, sendEmail) {
             const {
                 name, tagline, intro, overview,
                 roleOpportunities, expertGuidance, benefits,
-                careerPath, toolsCovered, faqs, ctaText
+                careerPath, toolsCovered, faqs, ctaText,
+                isVisible // NEW
             } = req.body;
 
             if (!name) {
@@ -75,6 +87,7 @@ module.exports = function (app, connectDB, sendEmail) {
                 ctaText: ctaText || "",
                 sectionVisibility: req.body.sectionVisibility || {}, // { overview: true, roles: false, ... }
 
+                isVisible: isVisible !== undefined ? isVisible : false, // Default to hidden
                 order: 0,
                 createdAt: new Date(),
                 updatedAt: new Date()
@@ -101,10 +114,15 @@ module.exports = function (app, connectDB, sendEmail) {
 
             // Ensure arrays are preserved if passed (standard req.body spread handles this, but good to be explicit mentally)
 
+            console.log(`[PUT] Updating Technology ${id}`);
+            console.log(`[PUT] Payload:`, JSON.stringify(req.body));
+
             const result = await db.collection('career_technologies').updateOne(
                 { _id: new ObjectId(id) },
                 { $set: updateData }
             );
+
+            console.log(`[PUT] Update Result:`, result.modifiedCount);
 
             if (result.matchedCount === 0) return res.status(404).json({ success: false, message: 'Technology not found' });
             res.status(200).json({ success: true, message: 'Technology updated' });

@@ -86,8 +86,13 @@ module.exports = function (app, connectDB) {
     router.get('/', async (req, res) => {
         try {
             const db = await connectDB();
-            const { category, search, sortBy } = req.query;
+            const { category, search, sortBy, includeHidden } = req.query;
             let query = {};
+
+            // Filter hidden by default unless includeHidden is true (for admin)
+            if (includeHidden !== 'true') {
+                query.isHidden = { $ne: true };
+            }
 
             if (category && category !== 'All') {
                 query.category = category;
@@ -127,6 +132,7 @@ module.exports = function (app, connectDB) {
                 resourceLink: resourceLink || "", // Google Drive Link or similar
                 category: category || "General",
                 description: description || "",
+                isHidden: true, // Default to hidden
                 createdAt: new Date(),
                 updatedAt: new Date()
             };
@@ -139,14 +145,15 @@ module.exports = function (app, connectDB) {
         }
     });
 
-    // Update Webinar
+    // Update Webinar (Edit)
     router.put('/:id', async (req, res) => {
         try {
             const db = await connectDB();
             const { id } = req.params;
             const updateData = {
                 ...req.body,
-                updatedAt: new Date()
+                updatedAt: new Date(),
+                isHidden: true // Force hidden on update
             };
 
             if (updateData.date) {
@@ -164,6 +171,26 @@ module.exports = function (app, connectDB) {
             res.status(200).json({ success: true, message: 'Webinar updated' });
         } catch (error) {
             console.error('Error updating webinar:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
+    // Toggle Webinar Visibility
+    router.put('/:id/visibility', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const { id } = req.params;
+            const { isHidden } = req.body;
+
+            const result = await db.collection('webinars').updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { isHidden: isHidden } }
+            );
+
+            if (result.matchedCount === 0) return res.status(404).json({ success: false, message: 'Webinar not found' });
+            res.status(200).json({ success: true, message: 'Webinar visibility updated' });
+        } catch (error) {
+            console.error('Error updating webinar visibility:', error);
             res.status(500).json({ success: false, message: 'Server error' });
         }
     });

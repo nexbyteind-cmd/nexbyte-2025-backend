@@ -69,6 +69,8 @@ connectDB().catch(console.error);
 app.use(express.static('public'));
 
 // Routes
+require('./webinars')(app, connectDB);
+require('./career-guidance')(app, connectDB, sendContactWelcomeEmail);
 
 // --- CONTACTS ---
 app.get('/api/contacts', async (req, res) => {
@@ -101,12 +103,18 @@ app.post('/api/contact', async (req, res) => {
 // --- HACKATHONS ---
 app.post('/api/hackathons', async (req, res) => {
     try {
+        console.log('[POST /api/hackathons] Hit');
+        console.log('Payload:', req.body);
+
         const database = await connectDB();
         const hackathonData = {
             name: req.body.name,
             mode: req.body.mode,
             description: req.body.description,
-            teamSize: req.body.teamSize,
+            teamSize: req.body.teamSize || {
+                min: parseInt(req.body.teamSizeMin),
+                max: parseInt(req.body.teamSizeMax)
+            },
             isPaid: req.body.isPaid,
             techStack: req.body.techStack,
             startDate: req.body.startDate,
@@ -119,16 +127,18 @@ app.post('/api/hackathons', async (req, res) => {
             benefits: req.body.benefits || "",
             createdAt: new Date(),
             status: 'active',
-            isHidden: false
+            isHidden: true // Default to hidden, admin must unhide manually
         };
 
         console.log('Creating hackathon with data:', hackathonData);
 
         const result = await database.collection('hackathons').insertOne(hackathonData);
+        console.log('Hackathon created with ID:', result.insertedId);
+
         res.status(201).json({ success: true, message: 'Hackathon created', id: result.insertedId });
     } catch (error) {
         console.error('Error creating hackathon:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        res.status(500).json({ success: false, message: 'Server error', error: error.message });
     }
 });
 
@@ -189,42 +199,62 @@ app.put('/api/hackathons/:id/visibility', async (req, res) => {
 
 app.put('/api/hackathons/:id', async (req, res) => {
     try {
-        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        console.log(`[PUT /api/hackathons/:id] Hit with ID: ${req.params.id}`);
+        console.log(`Payload:`, req.body);
+
+        if (!db) {
+            console.error('Database not connected');
+            return res.status(500).json({ success: false, message: 'Database error' });
+        }
+
         const { id } = req.params;
+
+        if (!ObjectId.isValid(id)) {
+            console.error(`Invalid ObjectId: ${id}`);
+            return res.status(400).json({ success: false, message: 'Invalid ID format' });
+        }
 
         const updateData = {
             name: req.body.name,
             mode: req.body.mode,
             description: req.body.description,
-            teamSize: req.body.teamSize,
+            teamSize: req.body.teamSize || {
+                min: parseInt(req.body.teamSizeMin),
+                max: parseInt(req.body.teamSizeMax)
+            },
             isPaid: req.body.isPaid,
             techStack: req.body.techStack,
             startDate: req.body.startDate,
             endDate: req.body.endDate,
             registrationDeadline: req.body.registrationDeadline,
-            helplineNumber: req.body.helplineNumber || "",
-            organizerContact: req.body.organizerContact || "",
-            whatsappGroupLink: req.body.whatsappGroupLink || "",
-            prizeMoney: req.body.prizeMoney || "",
-            benefits: req.body.benefits || "",
+            helplineNumber: req.body.helplineNumber,
+            organizerContact: req.body.organizerContact,
+            whatsappGroupLink: req.body.whatsappGroupLink,
+            prizeMoney: req.body.prizeMoney,
+            benefits: req.body.benefits,
+            isHidden: true, // Reset to hidden on every update
             updatedAt: new Date()
         };
 
-        console.log('Updating hackathon with data:', updateData);
+        console.log('Update Data:', updateData);
 
         const result = await db.collection('hackathons').updateOne(
             { _id: new ObjectId(id) },
             { $set: updateData }
         );
 
+        console.log('Update Result:', result);
+
         if (result.matchedCount === 0) {
+            console.warn(`Hackathon not found with ID: ${id}`);
             res.status(404).json({ success: false, message: 'Hackathon not found' });
         } else {
+            console.log(`Hackathon updated successfully: ${id}`);
             res.status(200).json({ success: true, message: 'Hackathon updated' });
         }
     } catch (error) {
         console.error('Error updating hackathon:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        res.status(500).json({ success: false, message: 'Server error', error: error.message });
     }
 });
 
@@ -264,7 +294,7 @@ app.post('/api/tech-posts', async (req, res) => {
             likes: 0,
             shares: 0,
             comments: [],
-            isHidden: false,
+            isHidden: true, // Hidden by default
             commentsHidden: false,
             subcategory: req.body.subcategory || ""
         };
@@ -376,7 +406,7 @@ app.put('/api/tech-posts/:id', async (req, res) => {
         } else if (type === 'comments-toggle') {
             updateData = { $set: { commentsHidden: payload.commentsHidden } };
         } else if (type === 'edit') {
-            updateData = { $set: payload };
+            updateData = { $set: { ...payload, isHidden: true } }; // Enforce hidden on edit
         }
 
         const result = await db.collection('tech_posts').updateOne(
@@ -1117,12 +1147,15 @@ app.get('/api/applications', async (req, res) => {
 // --- PROGRAMS (Trainings & Internships) ---
 app.post('/api/programs', async (req, res) => {
     try {
+        console.log('[POST /api/programs] Hit');
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
         const programData = {
             ...req.body,
             createdAt: new Date(),
-            status: req.body.status || 'Active'
+            status: req.body.status || 'Active',
+            isHidden: true // Default to hidden
         };
+        console.log('Creating program (hidden):', programData);
         const result = await db.collection('programs').insertOne(programData);
         res.status(201).json({ success: true, message: 'Program created', id: result.insertedId });
     } catch (error) {
@@ -1170,6 +1203,28 @@ app.delete('/api/programs/:id', async (req, res) => {
     }
 });
 
+app.put('/api/programs/:id/visibility', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { isHidden } = req.body;
+
+        const result = await db.collection('programs').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { isHidden: isHidden } }
+        );
+
+        if (result.matchedCount === 0) {
+            res.status(404).json({ success: false, message: 'Program not found' });
+        } else {
+            res.status(200).json({ success: true, message: 'Visibility updated' });
+        }
+    } catch (error) {
+        console.error('Error updating program visibility:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 app.put('/api/programs/:id', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
@@ -1177,12 +1232,13 @@ app.put('/api/programs/:id', async (req, res) => {
 
         const updateData = {
             ...req.body,
+            isHidden: true, // Force hidden on update
             updatedAt: new Date()
         };
         // Remove _id if present in body to avoid conflict
         delete updateData._id;
 
-        console.log('Updating program with data:', updateData);
+        console.log('Updating program (forcing hidden):', updateData);
 
         const result = await db.collection('programs').updateOne(
             { _id: new ObjectId(id) },
@@ -1687,8 +1743,9 @@ app.post('/api/testimonials', async (req, res) => {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
         const newItem = {
             ...req.body,
+            ...req.body,
             createdAt: new Date(),
-            isActive: req.body.isActive !== undefined ? req.body.isActive : true
+            isActive: false // Default to hidden
         };
         const result = await db.collection('testimonials').insertOne(newItem);
         res.status(201).json({ success: true, message: 'Item created', id: result.insertedId });
@@ -1713,10 +1770,10 @@ app.delete('/api/testimonials/:id', async (req, res) => {
 app.put('/api/testimonials/:id', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
-        const { _id, ...updateData } = req.body; // Remove _id from update data
+        const { _id, isActive, ...updateData } = req.body; // Remove _id and isActive from update data
         const result = await db.collection('testimonials').updateOne(
             { _id: new ObjectId(req.params.id) },
-            { $set: updateData }
+            { $set: { ...updateData, isActive: false } } // Force hidden on update
         );
         if (result.matchedCount === 0) return res.status(404).json({ success: false, message: 'Item not found' });
         res.status(200).json({ success: true, message: 'Item updated' });
@@ -1753,7 +1810,8 @@ app.post('/api/trainings', async (req, res) => {
         const training = {
             ...req.body,
             createdAt: new Date(),
-            status: req.body.status || 'Active'
+            status: req.body.status || 'Active',
+            isHidden: true // Default to hidden
         };
         const result = await db.collection('trainings').insertOne(training);
         res.status(201).json({ success: true, message: 'Training created', id: result.insertedId });
@@ -1778,6 +1836,28 @@ app.get('/api/trainings', async (req, res) => {
     }
 });
 
+app.put('/api/trainings/:id/visibility', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { isHidden } = req.body;
+
+        const result = await db.collection('trainings').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { isHidden: isHidden } }
+        );
+
+        if (result.matchedCount === 0) {
+            res.status(404).json({ success: false, message: 'Training not found' });
+        } else {
+            res.status(200).json({ success: true, message: 'Visibility updated' });
+        }
+    } catch (error) {
+        console.error('Error updating training visibility:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 app.put('/api/trainings/:id', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
@@ -1794,7 +1874,8 @@ app.put('/api/trainings/:id', async (req, res) => {
             {
                 $set: {
                     name, category, topics, duration, mode, description, syllabusLink, status, formFields, startDate, endDate, applyBy,
-                    emailSubject, emailBody, emailLinks, timing, note, hiddenFields, communityLink // NEW FIELDS
+                    emailSubject, emailBody, emailLinks, timing, note, hiddenFields, communityLink, // NEW FIELDS
+                    isHidden: true // Force hidden on update
                 }
             }
         );
@@ -2013,7 +2094,11 @@ app.post('/api/social-posts', async (req, res) => {
             shares: 0,
             comments: [],
             createdAt: new Date(),
-            updatedAt: new Date()
+            shares: 0,
+            comments: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            isHidden: true // Default to hidden
         };
 
         const result = await db.collection('social_posts').insertOne(postData);
@@ -2227,7 +2312,7 @@ app.put('/api/social-posts/:id', async (req, res) => {
             updateOp = { $push: { comments: payload } };
         } else if (type === 'edit') {
             // payload is the full update object
-            updateOp = { $set: { ...payload, updatedAt: new Date() } };
+            updateOp = { $set: { ...payload, updatedAt: new Date(), isHidden: true } }; // Force hidden on update
         } else if (type === 'visibility') {
             // payload: { isHidden: boolean }
             updateOp = { $set: { isHidden: payload.isHidden } };
@@ -2287,7 +2372,11 @@ app.post('/api/ai-posts', async (req, res) => {
             shares: 0,
             comments: [],
             createdAt: new Date(),
-            updatedAt: new Date()
+            shares: 0,
+            comments: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            isHidden: true // Default to hidden
         };
 
         const result = await db.collection('ai_posts').insertOne(postData);
@@ -2483,7 +2572,7 @@ app.put('/api/ai-posts/:id', async (req, res) => {
         } else if (type === 'comment') {
             updateOp = { $push: { comments: payload } };
         } else if (type === 'edit') {
-            updateOp = { $set: { ...payload, updatedAt: new Date() } };
+            updateOp = { $set: { ...payload, updatedAt: new Date(), isHidden: true } }; // Force hidden on update
         } else if (type === 'visibility') {
             updateOp = { $set: { isHidden: payload.isHidden } };
         } else if (type === 'comments-toggle') {

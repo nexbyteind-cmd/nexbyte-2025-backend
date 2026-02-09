@@ -101,6 +101,31 @@ module.exports = function (app, connectDB, sendEmail) {
         }
     });
 
+    // Batch Update Technology Order (Reorder) - MUST come before /:id route
+    router.put('/technologies/reorder', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const { technologies } = req.body;
+
+            console.log('[PUT] Batch Reorder Technologies:', technologies.length, 'items');
+
+            // Update all technologies in batch
+            const bulkOps = technologies.map(tech => ({
+                updateOne: {
+                    filter: { _id: new ObjectId(tech._id) },
+                    update: { $set: { order: tech.order } }
+                }
+            }));
+
+            await db.collection('career_technologies').bulkWrite(bulkOps);
+
+            res.status(200).json({ success: true, message: 'Order updated successfully' });
+        } catch (error) {
+            console.error('Error updating technology order:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
     // Update Technology (Name, Tagline, etc.)
     router.put('/technologies/:id', async (req, res) => {
         try {
@@ -175,28 +200,7 @@ module.exports = function (app, connectDB, sendEmail) {
         }
     });
 
-    // Batch Update Technology Order (Reorder)
-    router.put('/technologies/reorder', async (req, res) => {
-        try {
-            const db = await connectDB();
-            const { technologies } = req.body;
 
-            // Update all technologies in batch
-            const bulkOps = technologies.map(tech => ({
-                updateOne: {
-                    filter: { _id: new ObjectId(tech._id) },
-                    update: { $set: { order: tech.order } }
-                }
-            }));
-
-            await db.collection('career_technologies').bulkWrite(bulkOps);
-
-            res.status(200).json({ success: true, message: 'Order updated successfully' });
-        } catch (error) {
-            console.error('Error updating technology order:', error);
-            res.status(500).json({ success: false, message: 'Server error' });
-        }
-    });
 
 
     // --- SECTIONS ROUTES ---

@@ -175,6 +175,30 @@ module.exports = function (app, connectDB, sendEmail) {
         }
     });
 
+    // Update Technology Order (Reorder)
+    router.put('/technologies/:id/reorder', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const { id } = req.params;
+            const { order } = req.body;
+
+            const result = await db.collection('career_technologies').updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { order } }
+            );
+
+            if (result.matchedCount === 0) {
+                return res.status(404).json({ success: false, message: 'Technology not found' });
+            }
+
+            const updatedTech = await db.collection('career_technologies').findOne({ _id: new ObjectId(id) });
+            res.status(200).json({ success: true, data: updatedTech });
+        } catch (error) {
+            console.error('Error updating technology order:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
 
     // --- SECTIONS ROUTES ---
 

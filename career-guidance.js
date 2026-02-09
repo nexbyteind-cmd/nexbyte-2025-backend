@@ -175,24 +175,23 @@ module.exports = function (app, connectDB, sendEmail) {
         }
     });
 
-    // Update Technology Order (Reorder)
-    router.put('/technologies/:id/reorder', async (req, res) => {
+    // Batch Update Technology Order (Reorder)
+    router.put('/technologies/reorder', async (req, res) => {
         try {
             const db = await connectDB();
-            const { id } = req.params;
-            const { order } = req.body;
+            const { technologies } = req.body;
 
-            const result = await db.collection('career_technologies').updateOne(
-                { _id: new ObjectId(id) },
-                { $set: { order } }
-            );
+            // Update all technologies in batch
+            const bulkOps = technologies.map(tech => ({
+                updateOne: {
+                    filter: { _id: new ObjectId(tech._id) },
+                    update: { $set: { order: tech.order } }
+                }
+            }));
 
-            if (result.matchedCount === 0) {
-                return res.status(404).json({ success: false, message: 'Technology not found' });
-            }
+            await db.collection('career_technologies').bulkWrite(bulkOps);
 
-            const updatedTech = await db.collection('career_technologies').findOne({ _id: new ObjectId(id) });
-            res.status(200).json({ success: true, data: updatedTech });
+            res.status(200).json({ success: true, message: 'Order updated successfully' });
         } catch (error) {
             console.error('Error updating technology order:', error);
             res.status(500).json({ success: false, message: 'Server error' });

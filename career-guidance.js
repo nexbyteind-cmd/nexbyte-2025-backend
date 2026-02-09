@@ -78,16 +78,16 @@ module.exports = function (app, connectDB, sendEmail) {
                 intro: intro || "",
                 // New Structured Fields
                 overview: overview || "",
-                roleOpportunities: roleOpportunities || [], // Array of { role, description }
+                roleOpportunities: roleOpportunities || [],
                 expertGuidance: expertGuidance || "",
-                benefits: benefits || [], // Array of Strings
-                careerPath: careerPath || [], // Array of { title, description }
-                toolsCovered: toolsCovered || [], // Array of Strings
-                faqs: faqs || [], // Array of { question, answer }
+                benefits: benefits || [],
+                careerPath: careerPath || [],
+                toolsCovered: toolsCovered || [],
+                faqs: faqs || [],
                 ctaText: ctaText || "",
-                sectionVisibility: req.body.sectionVisibility || {}, // { overview: true, roles: false, ... }
+                sectionVisibility: req.body.sectionVisibility || {},
 
-                isVisible: isVisible !== undefined ? isVisible : false, // Default to hidden
+                isVisible: false, // Enforce hidden on creation
                 order: 0,
                 createdAt: new Date(),
                 updatedAt: new Date()
@@ -108,14 +108,13 @@ module.exports = function (app, connectDB, sendEmail) {
             const { id } = req.params;
             const updateData = {
                 ...req.body,
+                isVisible: false, // Enforce hidden on update
                 updatedAt: new Date()
             };
-            delete updateData._id; // prevent immutable field error
-
-            // Ensure arrays are preserved if passed (standard req.body spread handles this, but good to be explicit mentally)
+            delete updateData._id;
 
             console.log(`[PUT] Updating Technology ${id}`);
-            console.log(`[PUT] Payload:`, JSON.stringify(req.body));
+            console.log(`[PUT] Payload:`, JSON.stringify(updateData));
 
             const result = await db.collection('career_technologies').updateOne(
                 { _id: new ObjectId(id) },
@@ -149,6 +148,29 @@ module.exports = function (app, connectDB, sendEmail) {
             res.status(200).json({ success: true, message: 'Technology and associated sections deleted' });
         } catch (error) {
             console.error('Error deleting career technology:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
+
+    // Toggle Visibility Endpoint
+    router.put('/technologies/:id/visibility', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const { id } = req.params;
+            const { isVisible } = req.body;
+
+            console.log(`[PUT] Toggle Visibility for ${id} to ${isVisible}`);
+
+            const result = await db.collection('career_technologies').updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { isVisible: isVisible } }
+            );
+
+            if (result.matchedCount === 0) return res.status(404).json({ success: false, message: 'Technology not found' });
+            res.status(200).json({ success: true, message: 'Visibility updated' });
+        } catch (error) {
+            console.error('Error updating visibility:', error);
             res.status(500).json({ success: false, message: 'Server error' });
         }
     });

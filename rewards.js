@@ -37,17 +37,20 @@ module.exports = function (app, connectDB) {
     router.post('/', async (req, res) => {
         try {
             const db = await connectDB();
-            const { title, audience } = req.body;
+            const { title, description, bannerUrl, audience } = req.body;
 
             // Deactivate previous active rewards
             await db.collection('rewards').updateMany({ status: 'active' }, { $set: { status: 'completed' } });
 
             const newReward = {
                 title,
+                description: description || "",
+                bannerUrl: bannerUrl || "",
                 audience, // Array of { name, mobile }
                 status: 'active',
                 riggedIndex: -1, // Default no rigging
                 winner: null,
+                spinTriggeredAt: null,
                 createdAt: new Date()
             };
 
@@ -78,6 +81,50 @@ module.exports = function (app, connectDB) {
             res.status(200).json({ success: true, message: 'Rigged index updated' });
         } catch (error) {
             console.error('Error updating rigged index:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
+    // Trigger spin (Admin only action)
+    router.put('/:id/trigger-spin', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const { id } = req.params;
+
+            const result = await db.collection('rewards').updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { spinTriggeredAt: new Date() } }
+            );
+
+            if (result.matchedCount === 0) {
+                return res.status(404).json({ success: false, message: 'Reward not found' });
+            }
+
+            res.status(200).json({ success: true, message: 'Spin triggered' });
+        } catch (error) {
+            console.error('Error triggering spin:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
+    // Reset spin state
+    router.put('/:id/reset-spin', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const { id } = req.params;
+
+            const result = await db.collection('rewards').updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { spinTriggeredAt: null, winner: null } }
+            );
+
+            if (result.matchedCount === 0) {
+                return res.status(404).json({ success: false, message: 'Reward not found' });
+            }
+
+            res.status(200).json({ success: true, message: 'Spin state reset' });
+        } catch (error) {
+            console.error('Error resetting spin state:', error);
             res.status(500).json({ success: false, message: 'Server error' });
         }
     });

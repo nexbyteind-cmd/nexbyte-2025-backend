@@ -70,6 +70,7 @@ app.use(express.static('public'));
 
 // Routes
 require('./webinars')(app, connectDB);
+require('./rewards')(app, connectDB);
 
 // --- CONTACTS ---
 app.get('/api/contacts', async (req, res) => {

@@ -115,7 +115,7 @@ module.exports = function (app, connectDB) {
 
             const result = await db.collection('rewards').updateOne(
                 { _id: new ObjectId(id) },
-                { $set: { spinTriggeredAt: null, winner: null } }
+                { $set: { spinTriggeredAt: null, winner: null, status: 'active' } }
             );
 
             if (result.matchedCount === 0) {

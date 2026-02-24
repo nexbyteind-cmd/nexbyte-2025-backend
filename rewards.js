@@ -1,10 +1,13 @@
 const { ObjectId } = require('mongodb');
+const express = require('express');
 
 module.exports = function (app, connectDB) {
+    const router = express.Router();
+
     // --- REWARDS ---
 
     // Get all rewards (History)
-    app.get('/api/rewards', async (req, res) => {
+    router.get('/', async (req, res) => {
         try {
             const db = await connectDB();
             const rewards = await db.collection('rewards').find().sort({ createdAt: -1 }).toArray();
@@ -16,7 +19,7 @@ module.exports = function (app, connectDB) {
     });
 
     // Get latest active reward
-    app.get('/api/rewards/active', async (req, res) => {
+    router.get('/active', async (req, res) => {
         try {
             const db = await connectDB();
             const reward = await db.collection('rewards').findOne({ status: 'active' }, { sort: { createdAt: -1 } });
@@ -31,7 +34,7 @@ module.exports = function (app, connectDB) {
     });
 
     // Create new reward
-    app.post('/api/rewards', async (req, res) => {
+    router.post('/', async (req, res) => {
         try {
             const db = await connectDB();
             const { title, audience } = req.body;
@@ -57,7 +60,7 @@ module.exports = function (app, connectDB) {
     });
 
     // Update rigged index
-    app.put('/api/rewards/:id/rig', async (req, res) => {
+    router.put('/:id/rig', async (req, res) => {
         try {
             const db = await connectDB();
             const { id } = req.params;
@@ -80,7 +83,7 @@ module.exports = function (app, connectDB) {
     });
 
     // Set winner (after spin completion)
-    app.put('/api/rewards/:id/winner', async (req, res) => {
+    router.put('/:id/winner', async (req, res) => {
         try {
             const db = await connectDB();
             const { id } = req.params;
@@ -103,7 +106,7 @@ module.exports = function (app, connectDB) {
     });
 
     // Delete reward
-    app.delete('/api/rewards/:id', async (req, res) => {
+    router.delete('/:id', async (req, res) => {
         try {
             const db = await connectDB();
             const { id } = req.params;
@@ -118,4 +121,6 @@ module.exports = function (app, connectDB) {
             res.status(500).json({ success: false, message: 'Server error' });
         }
     });
+
+    app.use('/api/rewards', router);
 };

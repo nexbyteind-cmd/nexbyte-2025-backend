@@ -4,13 +4,87 @@ const express = require('express');
 module.exports = function (app, connectDB) {
     const router = express.Router();
 
+    // --- CATEGORIES ---
+
+    // Get all categories
+    router.get('/categories', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const categories = await db.collection('reward_categories').find().sort({ createdAt: -1 }).toArray();
+            res.status(200).json({ success: true, data: categories });
+        } catch (error) {
+            console.error('Error fetching categories:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
+    // Create new category
+    router.post('/categories', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const { name } = req.body;
+
+            if (!name || name.trim() === '') {
+                return res.status(400).json({ success: false, message: 'Category name is required' });
+            }
+
+            // Check if category already exists
+            const existing = await db.collection('reward_categories').findOne({ name: name.trim() });
+            if (existing) {
+                return res.status(400).json({ success: false, message: 'Category already exists' });
+            }
+
+            const newCategory = {
+                name: name.trim(),
+                createdAt: new Date()
+            };
+
+            const result = await db.collection('reward_categories').insertOne(newCategory);
+            res.status(201).json({ success: true, message: 'Category created', id: result.insertedId });
+        } catch (error) {
+            console.error('Error creating category:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
+    // Delete category
+    router.delete('/categories/:id', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const { id } = req.params;
+
+            // Check if any rewards use this category
+            const rewardsWithCategory = await db.collection('rewards').countDocuments({ categoryId: id });
+            if (rewardsWithCategory > 0) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: `Cannot delete category. ${rewardsWithCategory} reward(s) are using it.` 
+                });
+            }
+
+            const result = await db.collection('reward_categories').deleteOne({ _id: new ObjectId(id) });
+            if (result.deletedCount === 1) {
+                res.status(200).json({ success: true, message: 'Category deleted' });
+            } else {
+                res.status(404).json({ success: false, message: 'Category not found' });
+            }
+        } catch (error) {
+            console.error('Error deleting category:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
     // --- REWARDS ---
 
-    // Get all rewards (History)
+    // Get all rewards (History) - optionally filter by category
     router.get('/', async (req, res) => {
         try {
             const db = await connectDB();
-            const rewards = await db.collection('rewards').find().sort({ createdAt: -1 }).toArray();
+            const { categoryId } = req.query;
+            
+            const query = categoryId && categoryId !== 'all' ? { categoryId } : {};
+            const rewards = await db.collection('rewards').find(query).sort({ createdAt: -1 }).toArray();
+            
             res.status(200).json({ success: true, data: rewards });
         } catch (error) {
             console.error('Error fetching rewards:', error);
@@ -37,7 +111,7 @@ module.exports = function (app, connectDB) {
     router.post('/', async (req, res) => {
         try {
             const db = await connectDB();
-            const { title, description, bannerUrl, audience, buttonText, buttonLink } = req.body;
+            const { title, description, bannerUrl, audience, buttonText, buttonLink, categoryId } = req.body;
 
             // Deactivate previous active rewards
             await db.collection('rewards').updateMany({ status: 'active' }, { $set: { status: 'completed' } });
@@ -49,6 +123,7 @@ module.exports = function (app, connectDB) {
                 audience, // Array of { name, mobile }
                 buttonText: buttonText || "",
                 buttonLink: buttonLink || "",
+                categoryId: categoryId || null,
                 status: 'active',
                 riggedIndex: -1, // Default no rigging
                 winner: null,
@@ -136,7 +211,7 @@ module.exports = function (app, connectDB) {
         try {
             const db = await connectDB();
             const { id } = req.params;
-            const { title, description, bannerUrl, buttonText, buttonLink } = req.body;
+            const { title, description, bannerUrl, buttonText, buttonLink, categoryId } = req.body;
 
             const updateFields = {};
             if (title !== undefined) updateFields.title = title;
@@ -144,6 +219,7 @@ module.exports = function (app, connectDB) {
             if (bannerUrl !== undefined) updateFields.bannerUrl = bannerUrl;
             if (buttonText !== undefined) updateFields.buttonText = buttonText;
             if (buttonLink !== undefined) updateFields.buttonLink = buttonLink;
+            if (categoryId !== undefined) updateFields.categoryId = categoryId;
 
             const result = await db.collection('rewards').updateOne(
                 { _id: new ObjectId(id) },

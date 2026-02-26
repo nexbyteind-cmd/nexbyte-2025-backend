@@ -37,7 +37,7 @@ module.exports = function (app, connectDB) {
     router.post('/', async (req, res) => {
         try {
             const db = await connectDB();
-            const { title, description, bannerUrl, audience } = req.body;
+            const { title, description, bannerUrl, audience, buttonText, buttonLink } = req.body;
 
             // Deactivate previous active rewards
             await db.collection('rewards').updateMany({ status: 'active' }, { $set: { status: 'completed' } });
@@ -47,6 +47,8 @@ module.exports = function (app, connectDB) {
                 description: description || "",
                 bannerUrl: bannerUrl || "",
                 audience, // Array of { name, mobile }
+                buttonText: buttonText || "",
+                buttonLink: buttonLink || "",
                 status: 'active',
                 riggedIndex: -1, // Default no rigging
                 winner: null,
@@ -125,6 +127,36 @@ module.exports = function (app, connectDB) {
             res.status(200).json({ success: true, message: 'Spin state reset' });
         } catch (error) {
             console.error('Error resetting spin state:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
+    // Update reward details (button text/link, etc.)
+    router.put('/:id', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const { id } = req.params;
+            const { title, description, bannerUrl, buttonText, buttonLink } = req.body;
+
+            const updateFields = {};
+            if (title !== undefined) updateFields.title = title;
+            if (description !== undefined) updateFields.description = description;
+            if (bannerUrl !== undefined) updateFields.bannerUrl = bannerUrl;
+            if (buttonText !== undefined) updateFields.buttonText = buttonText;
+            if (buttonLink !== undefined) updateFields.buttonLink = buttonLink;
+
+            const result = await db.collection('rewards').updateOne(
+                { _id: new ObjectId(id) },
+                { $set: updateFields }
+            );
+
+            if (result.matchedCount === 0) {
+                return res.status(404).json({ success: false, message: 'Reward not found' });
+            }
+
+            res.status(200).json({ success: true, message: 'Reward updated' });
+        } catch (error) {
+            console.error('Error updating reward:', error);
             res.status(500).json({ success: false, message: 'Server error' });
         }
     });

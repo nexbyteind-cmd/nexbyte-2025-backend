@@ -168,16 +168,26 @@ module.exports = function (app, connectDB) {
             const db = await connectDB();
             const { id } = req.params;
 
-            const result = await db.collection('rewards').updateOne(
-                { _id: new ObjectId(id) },
-                { $set: { spinTriggeredAt: new Date() } }
-            );
-
-            if (result.matchedCount === 0) {
+            // Fetch the reward to check audience and riggedIndex
+            const reward = await db.collection('rewards').findOne({ _id: new ObjectId(id) });
+            if (!reward) {
                 return res.status(404).json({ success: false, message: 'Reward not found' });
             }
 
-            res.status(200).json({ success: true, message: 'Spin triggered' });
+            const updateData = { spinTriggeredAt: new Date() };
+
+            // If it's a random spin (riggedIndex is -1), pick the winner NOW on the server
+            // so all clients poll the same riggedIndex and see the same winner.
+            if (reward.riggedIndex === -1 && reward.audience && reward.audience.length > 0) {
+                updateData.riggedIndex = Math.floor(Math.random() * reward.audience.length);
+            }
+
+            const result = await db.collection('rewards').updateOne(
+                { _id: new ObjectId(id) },
+                { $set: updateData }
+            );
+
+            res.status(200).json({ success: true, message: 'Spin triggered', riggedIndex: updateData.riggedIndex });
         } catch (error) {
             console.error('Error triggering spin:', error);
             res.status(500).json({ success: false, message: 'Server error' });

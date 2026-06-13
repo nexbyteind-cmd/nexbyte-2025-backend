@@ -2616,6 +2616,260 @@ app.delete('/api/ai-posts/:id', async (req, res) => {
     }
 });
 
+// --- CSE CORE POSTS ---
+
+// Create CSE Core Post
+app.post('/api/cse-core-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const postData = {
+            ...req.body,
+            likes: 0,
+            shares: 0,
+            comments: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            isHidden: true // Default to hidden
+        };
+
+        const result = await db.collection('cse_core_posts').insertOne(postData);
+        res.status(201).json({ success: true, message: 'Post created', id: result.insertedId });
+    } catch (error) {
+        console.error('Error creating cse core post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// --- CSE CORE CATEGORIES ---
+app.post('/api/cse-core-categories', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ success: false, message: 'Category name is required' });
+
+        const existing = await db.collection('cse_core_categories').findOne({ name });
+        if (existing) {
+            return res.status(400).json({ success: false, message: 'Category already exists' });
+        }
+
+        const category = {
+            name,
+            isHidden: false,
+            createdAt: new Date()
+        };
+        const result = await db.collection('cse_core_categories').insertOne(category);
+        res.status(201).json({ success: true, message: 'Category created', id: result.insertedId });
+    } catch (error) {
+        console.error('Error creating cse core category:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.get('/api/cse-core-categories', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const query = {};
+        if (req.query.includeHidden !== 'true') {
+            query.isHidden = { $ne: true };
+        }
+
+        const categories = await db.collection('cse_core_categories').find(query).sort({ name: 1 }).toArray();
+        res.status(200).json({ success: true, data: categories });
+    } catch (error) {
+        console.error('Error fetching cse core categories:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.delete('/api/cse-core-categories/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const result = await db.collection('cse_core_categories').deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 1) {
+            res.status(200).json({ success: true, message: 'Category deleted' });
+        } else {
+            res.status(404).json({ success: false, message: 'Category not found' });
+        }
+    } catch (error) {
+        console.error('Error deleting cse core category:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+app.put('/api/cse-core-categories/:id/visibility', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { isHidden } = req.body;
+
+        const result = await db.collection('cse_core_categories').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { isHidden: isHidden } }
+        );
+
+        if (result.modifiedCount === 1) {
+            res.status(200).json({ success: true, message: 'Category visibility updated' });
+        } else {
+            res.status(404).json({ success: false, message: 'Category not found or unchanged' });
+        }
+    } catch (error) {
+        console.error('Error updating cse core category visibility:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Get Public CSE Core Posts (Filters out hidden)
+app.get('/api/cse-core-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const sortOption = req.query.sort === 'popular'
+            ? { likes: -1, shares: -1, createdAt: -1 }
+            : req.query.sort === 'general'
+                ? { createdAt: 1 }
+                : { createdAt: -1 };
+
+        const query = { isHidden: { $ne: true } };
+
+        const hiddenCategories = await db.collection('cse_core_categories').find({ isHidden: true }).toArray();
+        const hiddenCategoryNames = hiddenCategories.map(c => c.name);
+
+        if (hiddenCategoryNames.length > 0) {
+            query.category = { $nin: hiddenCategoryNames };
+        }
+
+        if (req.query.category && req.query.category !== 'All') {
+            if (hiddenCategoryNames.includes(req.query.category)) {
+                return res.status(200).json({ success: true, data: [] });
+            }
+            query.category = req.query.category;
+        }
+
+        if (req.query.date) {
+            const filterDate = new Date(req.query.date);
+            if (!isNaN(filterDate)) {
+                const nextDay = new Date(filterDate);
+                nextDay.setDate(nextDay.getDate() + 1);
+                query.createdAt = {
+                    $gte: filterDate,
+                    $lt: nextDay
+                };
+            }
+        }
+
+        const posts = await db.collection('cse_core_posts')
+            .find(query)
+            .sort(sortOption)
+            .toArray();
+        res.status(200).json({ success: true, data: posts });
+    } catch (error) {
+        console.error('Error fetching cse core posts:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Admin Get All CSE Core Posts (Includes hidden)
+app.get('/api/admin/cse-core-posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+
+        const sortOption = req.query.sort === 'popular'
+            ? { likes: -1, shares: -1, createdAt: -1 }
+            : { createdAt: -1 };
+
+        const posts = await db.collection('cse_core_posts')
+            .find({})
+            .sort(sortOption)
+            .toArray();
+        res.status(200).json({ success: true, data: posts });
+    } catch (error) {
+        console.error('Error fetching admin cse core posts:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Get Single CSE Core Post
+app.get('/api/cse-core-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+
+        const post = await db.collection('cse_core_posts').findOne({ _id: new ObjectId(id) });
+
+        if (!post) {
+            return res.status(404).json({ success: false, message: 'Post not found' });
+        }
+
+        res.status(200).json({ success: true, data: post });
+    } catch (error) {
+        console.error('Error fetching cse core post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Update CSE Core Post
+app.put('/api/cse-core-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { type, payload } = req.body;
+
+        let updateOp = {};
+
+        if (type === 'like') {
+            updateOp = { $inc: { likes: 1 } };
+        } else if (type === 'share') {
+            updateOp = { $inc: { shares: 1 } };
+        } else if (type === 'comment') {
+            updateOp = { $push: { comments: payload } };
+        } else if (type === 'edit') {
+            updateOp = { $set: { ...payload, updatedAt: new Date(), isHidden: true } }; // Force hidden on update
+        } else if (type === 'visibility') {
+            updateOp = { $set: { isHidden: payload.isHidden } };
+        } else if (type === 'comments-toggle') {
+            updateOp = { $set: { commentsHidden: payload.commentsHidden } };
+        } else {
+            return res.status(400).json({ success: false, message: 'Invalid update type' });
+        }
+
+        const result = await db.collection('cse_core_posts').updateOne(
+            { _id: new ObjectId(id) },
+            updateOp
+        );
+
+        if (result.matchedCount === 0) {
+            res.status(404).json({ success: false, message: 'Post not found' });
+        } else {
+            res.status(200).json({ success: true, message: 'Post updated' });
+        }
+    } catch (error) {
+        console.error('Error updating cse core post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Delete CSE Core Post
+app.delete('/api/cse-core-posts/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+
+        const result = await db.collection('cse_core_posts').deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount === 1) {
+            res.status(200).json({ success: true, message: 'Post deleted' });
+        } else {
+            res.status(404).json({ success: false, message: 'Post not found' });
+        }
+    } catch (error) {
+        console.error('Error deleting cse core post:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 // --- 404 Debug Handler ---
 
 // --- TOOLS: NOTES ---

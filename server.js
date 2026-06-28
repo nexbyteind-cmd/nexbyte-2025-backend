@@ -125,6 +125,10 @@ app.post('/api/hackathons', async (req, res) => {
             whatsappGroupLink: req.body.whatsappGroupLink || "",
             prizeMoney: req.body.prizeMoney || "",
             benefits: req.body.benefits || "",
+            enableApplyButton: req.body.enableApplyButton !== undefined ? req.body.enableApplyButton : true,
+            enableQuizButton: req.body.enableQuizButton || false,
+            quizButtonName: req.body.quizButtonName || "",
+            quizButtonLink: req.body.quizButtonLink || "",
             createdAt: new Date(),
             status: 'active',
             isHidden: true // Default to hidden, admin must unhide manually
@@ -197,6 +201,32 @@ app.put('/api/hackathons/:id/visibility', async (req, res) => {
     }
 });
 
+app.put('/api/hackathons/:id/status', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { status } = req.body;
+
+        const result = await db.collection('hackathons').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { status: status } }
+        );
+
+        if (result.modifiedCount === 1) {
+            res.status(200).json({ success: true, message: 'Status updated' });
+        } else {
+            if (result.matchedCount === 0) {
+                res.status(404).json({ success: false, message: 'Hackathon not found' });
+            } else {
+                res.status(200).json({ success: true, message: 'Status unchanged' });
+            }
+        }
+    } catch (error) {
+        console.error('Error updating status:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 app.put('/api/hackathons/:id', async (req, res) => {
     try {
         console.log(`[PUT /api/hackathons/:id] Hit with ID: ${req.params.id}`);
@@ -232,6 +262,10 @@ app.put('/api/hackathons/:id', async (req, res) => {
             whatsappGroupLink: req.body.whatsappGroupLink,
             prizeMoney: req.body.prizeMoney,
             benefits: req.body.benefits,
+            enableApplyButton: req.body.enableApplyButton,
+            enableQuizButton: req.body.enableQuizButton,
+            quizButtonName: req.body.quizButtonName,
+            quizButtonLink: req.body.quizButtonLink,
             isHidden: true, // Reset to hidden on every update
             updatedAt: new Date()
         };

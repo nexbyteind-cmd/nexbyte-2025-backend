@@ -71,6 +71,7 @@ app.use(express.static('public'));
 // Routes
 require('./webinars')(app, connectDB);
 require('./rewards')(app, connectDB);
+require('./quiz')(app, connectDB);
 
 // --- CONTACTS ---
 app.get('/api/contacts', async (req, res) => {
@@ -129,6 +130,7 @@ app.post('/api/hackathons', async (req, res) => {
             enableQuizButton: req.body.enableQuizButton || false,
             quizButtonName: req.body.quizButtonName || "",
             quizButtonLink: req.body.quizButtonLink || "",
+            linkedQuizId: req.body.linkedQuizId || null,
             createdAt: new Date(),
             status: 'active',
             isHidden: true // Default to hidden, admin must unhide manually
@@ -266,6 +268,7 @@ app.put('/api/hackathons/:id', async (req, res) => {
             enableQuizButton: req.body.enableQuizButton,
             quizButtonName: req.body.quizButtonName,
             quizButtonLink: req.body.quizButtonLink,
+            linkedQuizId: req.body.linkedQuizId || null,
             isHidden: true, // Reset to hidden on every update
             updatedAt: new Date()
         };

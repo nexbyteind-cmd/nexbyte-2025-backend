@@ -113,6 +113,7 @@ module.exports = function (app, connectDB) {
                 wrongCount: parseInt(req.body.wrongCount) || 0,
                 totalTimeSeconds: parseInt(req.body.totalTimeSeconds) || 0,
                 avgTimePerQuestion: parseFloat(req.body.avgTimePerQuestion) || 0,
+                timePerQuestion: Array.isArray(req.body.timePerQuestion) ? req.body.timePerQuestion : [],
                 submittedAt: new Date()
             };
 

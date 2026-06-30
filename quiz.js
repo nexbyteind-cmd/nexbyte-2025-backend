@@ -107,6 +107,19 @@ module.exports = function (app, connectDB) {
 
             if (result.matchedCount === 0) return res.status(404).json({ success: false, message: 'Quiz not found' });
 
+            // Automatically complete the linked hackathon wrapper if it exists
+            await db.collection('hackathons').updateOne(
+                { linkedQuizId: id },
+                { $set: {
+                    status: 'completed',
+                    winner: winner || '',
+                    secondWinner: secondWinner || '',
+                    raffleWinners: raffleWinners || '',
+                    participantsCount: participantsCount,
+                    updatedAt: new Date()
+                } }
+            );
+
             res.status(200).json({ success: true, message: 'Quiz completed' });
         } catch (error) {
             console.error('Error completing quiz:', error);

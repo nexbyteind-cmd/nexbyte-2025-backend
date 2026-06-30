@@ -5,7 +5,7 @@ module.exports = function (app, connectDB) {
     const router = express.Router();
 
     // --- ADS CATEGORIES ROUTES ---
-
+//-- All Types -->
     // Get all categories (ordered)
     router.get('/categories', async (req, res) => {
         try {

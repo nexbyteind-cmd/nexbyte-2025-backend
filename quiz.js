@@ -81,6 +81,39 @@ module.exports = function (app, connectDB) {
         }
     });
 
+    app.put('/api/quizzes/:id/complete', async (req, res) => {
+        try {
+            const db = await connectDB();
+            const { id } = req.params;
+            if (!ObjectId.isValid(id)) return res.status(400).json({ success: false, message: 'Invalid ID' });
+
+            const { winner, secondWinner, raffleWinners } = req.body;
+
+            const participantsCount = await db.collection('quiz_attempts').countDocuments({ quizId: id });
+
+            const quizUpdateData = {
+                status: 'completed',
+                winner: winner || '',
+                secondWinner: secondWinner || '',
+                raffleWinners: raffleWinners || '',
+                participantsCount,
+                updatedAt: new Date()
+            };
+
+            const result = await db.collection('quizzes').updateOne(
+                { _id: new ObjectId(id) },
+                { $set: quizUpdateData }
+            );
+
+            if (result.matchedCount === 0) return res.status(404).json({ success: false, message: 'Quiz not found' });
+
+            res.status(200).json({ success: true, message: 'Quiz completed' });
+        } catch (error) {
+            console.error('Error completing quiz:', error);
+            res.status(500).json({ success: false, message: 'Server error' });
+        }
+    });
+
     app.delete('/api/quizzes/:id', async (req, res) => {
         try {
             const db = await connectDB();

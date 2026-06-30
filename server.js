@@ -110,6 +110,7 @@ app.post('/api/hackathons', async (req, res) => {
         const database = await connectDB();
         const hackathonData = {
             name: req.body.name,
+            type: req.body.type || 'Hackathon', // 'Hackathon' or 'Quiz'
             mode: req.body.mode,
             description: req.body.description,
             teamSize: req.body.teamSize || {
@@ -207,11 +208,16 @@ app.put('/api/hackathons/:id/status', async (req, res) => {
     try {
         if (!db) return res.status(500).json({ success: false, message: 'Database error' });
         const { id } = req.params;
-        const { status } = req.body;
+        const { status, winner, secondWinner, raffleWinners } = req.body;
+
+        const updateData = { status: status };
+        if (winner !== undefined) updateData.winner = winner;
+        if (secondWinner !== undefined) updateData.secondWinner = secondWinner;
+        if (raffleWinners !== undefined) updateData.raffleWinners = raffleWinners;
 
         const result = await db.collection('hackathons').updateOne(
             { _id: new ObjectId(id) },
-            { $set: { status: status } }
+            { $set: updateData }
         );
 
         if (result.modifiedCount === 1) {
@@ -248,6 +254,7 @@ app.put('/api/hackathons/:id', async (req, res) => {
 
         const updateData = {
             name: req.body.name,
+            type: req.body.type || 'Hackathon',
             mode: req.body.mode,
             description: req.body.description,
             teamSize: req.body.teamSize || {

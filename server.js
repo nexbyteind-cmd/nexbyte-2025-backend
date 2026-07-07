@@ -132,6 +132,7 @@ app.post('/api/hackathons', async (req, res) => {
             quizButtonName: req.body.quizButtonName || "",
             quizButtonLink: req.body.quizButtonLink || "",
             linkedQuizId: req.body.linkedQuizId || null,
+            quizStartTime: req.body.quizStartTime || null,
             createdAt: new Date(),
             status: 'active',
             isHidden: true // Default to hidden, admin must unhide manually
@@ -276,6 +277,7 @@ app.put('/api/hackathons/:id', async (req, res) => {
             quizButtonName: req.body.quizButtonName,
             quizButtonLink: req.body.quizButtonLink,
             linkedQuizId: req.body.linkedQuizId || null,
+            quizStartTime: req.body.quizStartTime || null,
             isHidden: true, // Reset to hidden on every update
             updatedAt: new Date()
         };

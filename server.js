@@ -2408,14 +2408,7 @@ app.delete('/api/social-posts/:id', async (req, res) => {
 
 // --- SOCIAL POST VALIDATION (OTP & EMAILS) ---
 
-// Dedicated transporter for OTP feature
-const otpTransporter = nodemailer.createTransport({
-    service: 'gmail', // Assuming it's gmail based on the credentials format
-    auth: {
-        user: process.env.SMTP_EMAIL || 'lokesh@nexbyteind.com',
-        pass: process.env.SMTP_PASSWORD || 'eyis qsur yitl vsjg'
-    }
-});
+    // (otpTransporter removed in favor of global Brevo transporter)
 
 // Admin: Get all allowed emails
 app.get('/api/admin/social-post-emails', async (req, res) => {
@@ -2509,32 +2502,21 @@ app.post('/api/social-posts/verify-email', async (req, res) => {
             { upsert: true }
         );
 
-        // Send OTP via Email
-        const mailOptions = {
-            from: `"NexByte Security" <${process.env.SMTP_EMAIL || 'lokesh@nexbyteind.com'}>`,
-            to: email,
-            subject: 'Your Social Posts Verification OTP',
-            html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                    <h2 style="color: #2563eb;">Verification OTP</h2>
-                    <p>Hello,</p>
-                    <p>Your one-time password (OTP) for accessing Social Posts is:</p>
-                    <h1 style="font-size: 36px; letter-spacing: 5px; color: #1e40af; text-align: center; background: #f3f4f6; padding: 10px; border-radius: 8px;">${otp}</h1>
-                    <p>This OTP is valid for <strong>1 minute</strong>.</p>
-                    <p>If you did not request this, please ignore this email.</p>
-                    <br/>
-                    <p>Best Regards,<br/><strong>Team NexByte</strong></p>
-                </div>
-            `
-        };
+        // Send OTP via Email using the global Brevo transporter
+        const htmlContent = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                <h2 style="color: #2563eb;">Verification OTP</h2>
+                <p>Hello,</p>
+                <p>Your one-time password (OTP) for accessing Social Posts is:</p>
+                <h1 style="font-size: 36px; letter-spacing: 5px; color: #1e40af; text-align: center; background: #f3f4f6; padding: 10px; border-radius: 8px;">${otp}</h1>
+                <p>This OTP is valid for <strong>1 minute</strong>.</p>
+                <p>If you did not request this, please ignore this email.</p>
+                <br/>
+                <p>Best Regards,<br/><strong>Team NexByte</strong></p>
+            </div>
+        `;
 
-        otpTransporter.sendMail(mailOptions, (error, info) => {
-            if (error) {
-                console.error('Error sending OTP email:', error);
-            } else {
-                console.log('OTP Email sent: ' + info.response);
-            }
-        });
+        await sendEmail(email, 'Your Social Posts Verification OTP', htmlContent);
 
         res.status(200).json({ success: true, message: 'OTP sent successfully' });
     } catch (error) {

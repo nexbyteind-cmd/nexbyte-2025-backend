@@ -2405,6 +2405,174 @@ app.delete('/api/social-posts/:id', async (req, res) => {
 });
 
 // Export the Express API for Vercel
+
+// --- SOCIAL POST VALIDATION (OTP & EMAILS) ---
+
+// Dedicated transporter for OTP feature
+const otpTransporter = nodemailer.createTransport({
+    service: 'gmail', // Assuming it's gmail based on the credentials format
+    auth: {
+        user: process.env.SMTP_EMAIL || 'lokesh@nexbyteind.com',
+        pass: process.env.SMTP_PASSWORD || 'eyis qsur yitl vsjg'
+    }
+});
+
+// Admin: Get all allowed emails
+app.get('/api/admin/social-post-emails', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const emails = await db.collection('social_post_validation_emails').find({}).sort({ createdAt: -1 }).toArray();
+        res.status(200).json({ success: true, data: emails });
+    } catch (error) {
+        console.error('Error fetching emails:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Admin: Add new email
+app.post('/api/admin/social-post-emails', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+
+        const existing = await db.collection('social_post_validation_emails').findOne({ email: email.toLowerCase() });
+        if (existing) return res.status(400).json({ success: false, message: 'Email already exists' });
+
+        const result = await db.collection('social_post_validation_emails').insertOne({
+            email: email.toLowerCase(),
+            createdAt: new Date()
+        });
+        res.status(201).json({ success: true, data: { _id: result.insertedId, email: email.toLowerCase() } });
+    } catch (error) {
+        console.error('Error adding email:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Admin: Edit email
+app.put('/api/admin/social-post-emails/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+
+        const result = await db.collection('social_post_validation_emails').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { email: email.toLowerCase(), updatedAt: new Date() } }
+        );
+
+        if (result.matchedCount === 0) return res.status(404).json({ success: false, message: 'Email not found' });
+        res.status(200).json({ success: true, message: 'Email updated' });
+    } catch (error) {
+        console.error('Error updating email:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Admin: Delete email
+app.delete('/api/admin/social-post-emails/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { id } = req.params;
+        const result = await db.collection('social_post_validation_emails').deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount === 0) return res.status(404).json({ success: false, message: 'Email not found' });
+        res.status(200).json({ success: true, message: 'Email deleted' });
+    } catch (error) {
+        console.error('Error deleting email:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Frontend: Verify Email and Send OTP
+app.post('/api/social-posts/verify-email', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+
+        const allowed = await db.collection('social_post_validation_emails').findOne({ email: email.toLowerCase() });
+        if (!allowed) {
+            return res.status(403).json({ success: false, message: 'Email not found in database. Please contact helpdesk from footer part.' });
+        }
+
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        // Store OTP with expiry (1 minute)
+        const expiresAt = new Date(Date.now() + 60 * 1000);
+        await db.collection('otp_verifications').updateOne(
+            { email: email.toLowerCase() },
+            { $set: { otp, expiresAt, createdAt: new Date() } },
+            { upsert: true }
+        );
+
+        // Send OTP via Email
+        const mailOptions = {
+            from: `"NexByte Security" <${process.env.SMTP_EMAIL || 'lokesh@nexbyteind.com'}>`,
+            to: email,
+            subject: 'Your Social Posts Verification OTP',
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                    <h2 style="color: #2563eb;">Verification OTP</h2>
+                    <p>Hello,</p>
+                    <p>Your one-time password (OTP) for accessing Social Posts is:</p>
+                    <h1 style="font-size: 36px; letter-spacing: 5px; color: #1e40af; text-align: center; background: #f3f4f6; padding: 10px; border-radius: 8px;">${otp}</h1>
+                    <p>This OTP is valid for <strong>1 minute</strong>.</p>
+                    <p>If you did not request this, please ignore this email.</p>
+                    <br/>
+                    <p>Best Regards,<br/><strong>Team NexByte</strong></p>
+                </div>
+            `
+        };
+
+        otpTransporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                console.error('Error sending OTP email:', error);
+            } else {
+                console.log('OTP Email sent: ' + info.response);
+            }
+        });
+
+        res.status(200).json({ success: true, message: 'OTP sent successfully' });
+    } catch (error) {
+        console.error('Error in verify-email:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Frontend: Validate OTP
+app.post('/api/social-posts/validate-otp', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ success: false, message: 'Database error' });
+        const { email, otp } = req.body;
+        if (!email || !otp) return res.status(400).json({ success: false, message: 'Email and OTP are required' });
+
+        const record = await db.collection('otp_verifications').findOne({ email: email.toLowerCase() });
+        if (!record) {
+            return res.status(400).json({ success: false, message: 'No OTP request found for this email' });
+        }
+
+        if (new Date() > new Date(record.expiresAt)) {
+            return res.status(400).json({ success: false, message: 'OTP has expired' });
+        }
+
+        if (record.otp !== otp) {
+            return res.status(400).json({ success: false, message: 'Invalid OTP' });
+        }
+
+        // OTP is valid, remove it
+        await db.collection('otp_verifications').deleteOne({ email: email.toLowerCase() });
+
+        res.status(200).json({ success: true, message: 'OTP verified successfully' });
+    } catch (error) {
+        console.error('Error in validate-otp:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 // --- AI POSTS ---
 
 // Create AI Post
